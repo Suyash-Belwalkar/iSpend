@@ -306,55 +306,127 @@ struct InvestmentSheet: View {
     }
 }
 
-struct SubscriptionContributionSheet: View {
+struct SubscriptionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
-    let subscription: FamilySubscription
-
-    @State private var memberName = ""
-    @State private var month = Date()
+    @State private var title = ""
     @State private var amount = 0.0
-    @State private var isPaid = true
-    @State private var paidOn = Date()
+    @State private var maxMembers = 6
 
     var body: some View {
         NavigationStack {
             Form {
-                Section(subscription.title) {
-                    TextField("Member name", text: $memberName)
-                    DatePicker("Month", selection: $month, displayedComponents: .date)
+                Section("Subscription") {
+                    TextField("Title", text: $title)
                     TextField("Amount", value: $amount, format: .number)
                         .keyboardType(.decimalPad)
-                    Toggle("Payment received", isOn: $isPaid)
-                    if isPaid {
-                        DatePicker("Paid on", selection: $paidOn, displayedComponents: .date)
-                    }
+                    Stepper("Max members: \(maxMembers)", value: $maxMembers, in: 1 ... 12)
                 }
             }
-            .navigationTitle("Add Member Payment")
+            .navigationTitle("Add Subscription")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save", action: save)
-                        .disabled(memberName.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || amount <= 0)
                 }
             }
         }
     }
 
     private func save() {
-        let contribution = SubscriptionContribution(
-            memberName: memberName.trimmingCharacters(in: .whitespacesAndNewlines),
-            monthKey: FamilySubscription.monthKey(from: month),
+        let subscription = FamilySubscription(
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             amount: amount,
-            isPaid: isPaid,
-            paidOn: isPaid ? paidOn : nil,
-            subscription: subscription
+            maxMembers: maxMembers
         )
-        modelContext.insert(contribution)
+        modelContext.insert(subscription)
+        WidgetReloader.reload()
+        dismiss()
+    }
+}
+
+struct SubscriptionMemberSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+
+    let subscription: FamilySubscription
+    let member: SubscriptionMember?
+
+    @State private var memberName = ""
+    @State private var amount = 0.0
+    @State private var isPaid = true
+    @State private var paidThroughMonth = Date()
+
+    init(subscription: FamilySubscription, member: SubscriptionMember? = nil) {
+        self.subscription = subscription
+        self.member = member
+        _memberName = State(initialValue: member?.memberName ?? "")
+        _amount = State(initialValue: member?.amount ?? 0)
+        _isPaid = State(initialValue: member?.paidThroughMonth != nil)
+        _paidThroughMonth = State(initialValue: member?.paidThroughMonth ?? .now)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(subscription.title) {
+                    TextField("Member name", text: $memberName)
+                    TextField("Amount", value: $amount, format: .number)
+                        .keyboardType(.decimalPad)
+                    Toggle("Marked as paid", isOn: $isPaid)
+                    if isPaid {
+                        DatePicker("Paid through", selection: $paidThroughMonth, displayedComponents: .date)
+                    }
+                }
+            }
+            .navigationTitle(member == nil ? "Add Member" : "Edit Member")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(member == nil ? "Save" : "Update", action: save)
+                        .disabled(memberName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || amount <= 0)
+                }
+                if member != nil {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("Delete", role: .destructive, action: deleteMember)
+                    }
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let normalizedMonth = Calendar.current.date(
+            from: Calendar.current.dateComponents([.year, .month], from: paidThroughMonth)
+        ) ?? paidThroughMonth
+
+        if let member {
+            member.memberName = memberName.trimmingCharacters(in: .whitespacesAndNewlines)
+            member.amount = amount
+            member.paidThroughMonth = isPaid ? normalizedMonth : nil
+            member.subscription = subscription
+        } else {
+            let newMember = SubscriptionMember(
+                memberName: memberName.trimmingCharacters(in: .whitespacesAndNewlines),
+                amount: amount,
+                paidThroughMonth: isPaid ? normalizedMonth : nil,
+                subscription: subscription
+            )
+            modelContext.insert(newMember)
+        }
+        WidgetReloader.reload()
+        dismiss()
+    }
+
+    private func deleteMember() {
+        guard let member else { return }
+        modelContext.delete(member)
         WidgetReloader.reload()
         dismiss()
     }

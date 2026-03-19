@@ -8,7 +8,7 @@ struct ContentView: View {
     @Query(sort: \FriendLedgerEntry.date, order: .reverse) private var friendEntries: [FriendLedgerEntry]
     @Query(sort: \Investment.title) private var investments: [Investment]
     @Query(sort: \FamilySubscription.title) private var subscriptions: [FamilySubscription]
-    @Query(sort: \SubscriptionContribution.monthKey, order: .reverse) private var contributions: [SubscriptionContribution]
+    @Query(sort: \SubscriptionMember.memberName) private var subscriptionMembers: [SubscriptionMember]
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
     @State private var selectedAccountID: PersistentIdentifier?
@@ -128,8 +128,12 @@ struct ContentView: View {
             InvestmentSheet()
         case .addFriendEntry:
             FriendEntrySheet()
-        case let .addSubscriptionContribution(subscription):
-            SubscriptionContributionSheet(subscription: subscription)
+        case .addSubscription:
+            SubscriptionSheet()
+        case let .addSubscriptionMember(subscription):
+            SubscriptionMemberSheet(subscription: subscription)
+        case let .editSubscriptionMember(member):
+            SubscriptionMemberSheet(subscription: member.subscription!, member: member)
         case .addCategory:
             CategorySheet()
         case let .editCategory(category):
@@ -189,11 +193,19 @@ struct ContentView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            FamilySubscriptionsView { subscription in
-                                activeSheet = .addSubscriptionContribution(subscription)
-                            }
+                            FamilySubscriptionsView(
+                                onAddSubscription: {
+                                    activeSheet = .addSubscription
+                                },
+                                onAddMember: { subscription in
+                                    activeSheet = .addSubscriptionMember(subscription)
+                                },
+                                onEditMember: { member in
+                                    activeSheet = .editSubscriptionMember(member)
+                                }
+                            )
                         } label: {
-                            FamilySubscriptionCard(subscriptions: subscriptions, contributions: contributions)
+                            FamilySubscriptionCard(subscriptions: subscriptions, members: subscriptionMembers)
                         }
                         .buttonStyle(.plain)
 
@@ -289,16 +301,27 @@ struct ContentView: View {
     }
 
     private func seedDataIfNeeded() {
-        if categories.isEmpty {
-            let defaults = [
-                ExpenseCategory(name: "Food", colorHex: "#FF9500"),
-                ExpenseCategory(name: "Diet", colorHex: "#30D158"),
-                ExpenseCategory(name: "Gym", colorHex: "#5E5CE6"),
-                ExpenseCategory(name: "Shopping", colorHex: "#FF2D55"),
-                ExpenseCategory(name: "Turf", colorHex: "#34C759"),
-                ExpenseCategory(name: "Subscription", colorHex: "#64D2FF"),
-            ]
-            for category in defaults { modelContext.insert(category) }
+        var didMutateSharedData = false
+
+        let defaultCategoryColors: [String: String] = [
+            "Food": "#FF7A1A",
+            "Diet": "#2FBF71",
+            "Gym": "#4F46E5",
+            "Shopping": "#FF4D8D",
+            "Turf": "#12B981",
+            "Subscription": "#38BDF8",
+        ]
+
+        for (name, colorHex) in defaultCategoryColors {
+            if let existingCategory = categories.first(where: { $0.name == name }) {
+                if existingCategory.colorHex != colorHex {
+                    existingCategory.colorHex = colorHex
+                    didMutateSharedData = true
+                }
+            } else {
+                modelContext.insert(ExpenseCategory(name: name, colorHex: colorHex))
+                didMutateSharedData = true
+            }
         }
 
         if accounts.isEmpty {
@@ -307,10 +330,16 @@ struct ContentView: View {
             modelContext.insert(primary)
             modelContext.insert(secondary)
             selectedAccountID = primary.persistentModelID
+            didMutateSharedData = true
         }
 
         if subscriptions.isEmpty {
             modelContext.insert(FamilySubscription(title: "Apple Music Family", amount: 149, maxMembers: 6))
+            didMutateSharedData = true
+        }
+
+        if didMutateSharedData {
+            WidgetReloader.reload()
         }
     }
 }
@@ -330,7 +359,7 @@ private extension Array {
         FriendLedgerEntry.self,
         Investment.self,
         FamilySubscription.self,
-        SubscriptionContribution.self,
+        SubscriptionMember.self,
         ExpenseCategory.self,
     ])
     let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

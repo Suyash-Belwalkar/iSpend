@@ -175,8 +175,8 @@ final class FamilySubscription {
     var amount: Double
     var maxMembers: Int
 
-    @Relationship(deleteRule: .cascade, inverse: \SubscriptionContribution.subscription)
-    var contributions: [SubscriptionContribution] = []
+    @Relationship(deleteRule: .cascade, inverse: \SubscriptionMember.subscription)
+    var members: [SubscriptionMember] = []
 
     init(title: String, amount: Double, maxMembers: Int = 6) {
         self.title = title
@@ -186,27 +186,21 @@ final class FamilySubscription {
 }
 
 @Model
-final class SubscriptionContribution {
+final class SubscriptionMember {
     var memberName: String
-    var monthKey: String
     var amount: Double
-    var isPaid: Bool
-    var paidOn: Date?
+    var paidThroughMonth: Date?
     var subscription: FamilySubscription?
 
     init(
         memberName: String,
-        monthKey: String,
         amount: Double,
-        isPaid: Bool = false,
-        paidOn: Date? = nil,
+        paidThroughMonth: Date? = nil,
         subscription: FamilySubscription?
     ) {
         self.memberName = memberName
-        self.monthKey = monthKey
         self.amount = amount
-        self.isPaid = isPaid
-        self.paidOn = paidOn
+        self.paidThroughMonth = paidThroughMonth
         self.subscription = subscription
     }
 }
@@ -218,5 +212,20 @@ extension FamilySubscription {
         formatter.locale = .current
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: date)
+    }
+}
+
+extension SubscriptionMember {
+    var isCurrentMonthPaid: Bool {
+        guard let paidThroughMonth else { return false }
+        let calendar = Calendar.current
+        let currentMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: .now)) ?? .now
+        let paidThroughStart = calendar.date(from: calendar.dateComponents([.year, .month], from: paidThroughMonth)) ?? paidThroughMonth
+        return paidThroughStart >= currentMonthStart
+    }
+
+    var paidThroughLabel: String {
+        guard let paidThroughMonth else { return "Not paid" }
+        return FamilySubscription.monthKey(from: paidThroughMonth)
     }
 }

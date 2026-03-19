@@ -129,6 +129,28 @@ extension Double {
         formatter.minimumFractionDigits = 0
         return formatter.string(from: NSNumber(value: self)) ?? "\(self)"
     }
+
+    func currencyParts() -> (symbol: String, value: String) {
+        let formatted = currency()
+        let symbol = "₹"
+        if formatted.hasPrefix(symbol) {
+            return (symbol, String(formatted.dropFirst(symbol.count)))
+        }
+        return (symbol, formatted)
+    }
+}
+
+struct WidgetCurrencyText: View {
+    let amount: Double
+
+    var body: some View {
+        let parts = amount.currencyParts()
+        return HStack(spacing: 0) {
+            Text(parts.symbol)
+                .fontDesign(.default)
+            Text(parts.value)
+        }
+    }
 }
 
 extension Color {

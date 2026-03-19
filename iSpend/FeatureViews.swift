@@ -20,7 +20,7 @@ struct ExpenseRowView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
-                Text(expense.amount.currency())
+                CurrencyText(amount: expense.amount)
                     .foregroundStyle(expense.direction.tint)
                 Text(expense.date, style: .time)
                     .font(.caption)
@@ -41,10 +41,10 @@ struct DailyBreakdownView: View {
     var body: some View {
         List {
             Section("Current Period") {
-                LabeledContent("Today", value: totals.today.currency())
-                LabeledContent("This Week", value: totals.week.currency())
-                LabeledContent("This Month", value: totals.month.currency())
-                LabeledContent("This Year", value: totals.year.currency())
+                LabeledContent("Today") { CurrencyText(amount: totals.today) }
+                LabeledContent("This Week") { CurrencyText(amount: totals.week) }
+                LabeledContent("This Month") { CurrencyText(amount: totals.month) }
+                LabeledContent("This Year") { CurrencyText(amount: totals.year) }
             }
         }
         .navigationTitle("Expense Summary")
@@ -122,7 +122,7 @@ struct BankCardView: View {
                     Text("Current Balance")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.8))
-                    Text(balance.currency())
+                    CurrencyText(amount: balance)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
                 }
@@ -131,9 +131,6 @@ struct BankCardView: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Dominant Categories")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.78))
                         Text(prominentCategories.isEmpty ? "No spend data yet" : prominentCategories.map(\.name).joined(separator: " • "))
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.92))
@@ -225,17 +222,17 @@ struct ExpenseSummaryCard: View {
 
                 Spacer(minLength: 0)
 
-                Text(totals.today.currency())
+                CurrencyText(amount: totals.today)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(totals.week.currency())
+                    CurrencyText(amount: totals.week)
                         .font(.title2.bold())
                         .foregroundStyle(.primary.opacity(0.6))
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(totals.month.currency())
+                    CurrencyText(amount: totals.month)
                         .font(.title3.bold())
                         .foregroundStyle(.primary.opacity(0.38))
                 }
@@ -261,7 +258,7 @@ struct ParentContextExpenseCard: View {
 
                 Spacer()
 
-                Text(amount.currency())
+                CurrencyText(amount: amount)
                     .font(.title2.bold())
                     .foregroundStyle(tint)
             }
@@ -283,7 +280,7 @@ struct FriendsOverviewCard: View {
 
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(summary.owedToMe.currency())
+                        CurrencyText(amount: summary.owedToMe)
                             .font(.title3.bold())
                             .foregroundStyle(.green)
                         Text("Owe Me")
@@ -292,7 +289,7 @@ struct FriendsOverviewCard: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(summary.iOwe.currency())
+                        CurrencyText(amount: summary.iOwe)
                             .font(.title3.bold())
                             .foregroundStyle(.red)
                         Text("I Owe")
@@ -389,7 +386,7 @@ struct InvestmentsCard: View {
                     Spacer()
                 }
                 Spacer()
-                Text(total.currency())
+                CurrencyText(amount: total)
                     .font(.title2.bold())
                 Text("\(count) monthly recurring payments")
                     .font(.subheadline)
@@ -401,12 +398,10 @@ struct InvestmentsCard: View {
 
 struct FamilySubscriptionCard: View {
     let subscriptions: [FamilySubscription]
-    let contributions: [SubscriptionContribution]
+    let members: [SubscriptionMember]
 
     var body: some View {
-        let currentMonth = FamilySubscription.monthKey(from: .now)
-        let currentMonthContributions = contributions.filter { $0.monthKey == currentMonth }
-        let paidCount = currentMonthContributions.filter(\.isPaid).count
+        let paidCount = members.filter(\.isCurrentMonthPaid).count
 
         DashboardCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -420,7 +415,7 @@ struct FamilySubscriptionCard: View {
 
                 Text("\(subscriptions.count) active plan\(subscriptions.count == 1 ? "" : "s")")
                     .font(.title3.bold())
-                Text("\(paidCount) payments marked received for \(currentMonth)")
+                Text("\(paidCount) members marked paid for this month")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -456,7 +451,7 @@ struct InvestmentsView: View {
                         HStack {
                             Text(investment.title)
                             Spacer()
-                            Text(investment.amount.currency())
+                            CurrencyText(amount: investment.amount)
                                 .foregroundStyle(.primary)
                         }
                         Text("Due every month on day \(investment.dueDay)")
@@ -513,7 +508,7 @@ struct FriendsView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text(entry.amount.currency())
+                                CurrencyText(amount: entry.amount)
                                     .foregroundStyle(entry.direction == .owesMe ? .green : .red)
                             }
                         }
@@ -544,9 +539,11 @@ struct FriendsView: View {
 struct FamilySubscriptionsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \FamilySubscription.title) private var subscriptions: [FamilySubscription]
-    @Query(sort: \SubscriptionContribution.monthKey, order: .reverse) private var contributions: [SubscriptionContribution]
+    @Query(sort: \SubscriptionMember.memberName) private var members: [SubscriptionMember]
 
-    let onAddContribution: (FamilySubscription) -> Void
+    let onAddSubscription: () -> Void
+    let onAddMember: (FamilySubscription) -> Void
+    let onEditMember: (SubscriptionMember) -> Void
 
     var body: some View {
         List {
@@ -555,66 +552,55 @@ struct FamilySubscriptionsView: View {
             } else {
                 ForEach(subscriptions) { subscription in
                     Section {
-                        let rows = contributions.filter { $0.subscription?.persistentModelID == subscription.persistentModelID }
+                        let rows = members.filter { $0.subscription?.persistentModelID == subscription.persistentModelID }
 
-                        ForEach(rows) { contribution in
-                            NavigationLink {
-                                SubscriptionContributionDetailView(contribution: contribution)
+                        ForEach(rows) { member in
+                            Button {
+                                onEditMember(member)
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack {
-                                        Text(contribution.memberName)
+                                        Text(member.memberName)
                                         Spacer()
-                                        Text(contribution.amount.currency())
-                                            .foregroundStyle(contribution.isPaid ? .green : .red)
+                                        CurrencyText(amount: member.amount)
+                                            .foregroundStyle(member.isCurrentMonthPaid ? .green : .red)
                                     }
-                                    Text(contribution.monthKey)
+                                    Text(member.paidThroughLabel)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
                         .onDelete { offsets in
                             delete(rows: rows, offsets: offsets)
                         }
 
-                        Button("Add Monthly Payment") {
-                            onAddContribution(subscription)
+                        Button("Add Member") {
+                            onAddMember(subscription)
                         }
                     } header: {
                         Text(subscription.title)
                     } footer: {
-                        Text("Tracks who sent you money for each month.")
+                        Text("Tracks each member and the month till which they have paid.")
                     }
                 }
             }
         }
         .navigationTitle("Subscriptions")
-    }
-
-    private func delete(rows: [SubscriptionContribution], offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(rows[index])
-        }
-    }
-}
-
-struct SubscriptionContributionDetailView: View {
-    let contribution: SubscriptionContribution
-
-    var body: some View {
-        Form {
-            LabeledContent("Member", value: contribution.memberName)
-            LabeledContent("Month", value: contribution.monthKey)
-            LabeledContent("Amount", value: contribution.amount.currency())
-            LabeledContent("Status", value: contribution.isPaid ? "Paid" : "Pending")
-            if let paidOn = contribution.paidOn {
-                LabeledContent("Paid on") {
-                    Text(paidOn, style: .date)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: onAddSubscription) {
+                    Image(systemName: "plus")
                 }
             }
         }
-        .navigationTitle(contribution.memberName)
+    }
+
+    private func delete(rows: [SubscriptionMember], offsets: IndexSet) {
+        for index in offsets {
+            modelContext.delete(rows[index])
+        }
     }
 }
 
@@ -714,7 +700,7 @@ struct BankInsightsView: View {
                                 .symbolRenderingMode(.palette)
                                 .foregroundStyle(Color(hex: category.colorHex), Color(hex: category.colorHex))
                             Spacer()
-                            Text(total.currency())
+                            CurrencyText(amount: total)
                                 .font(.headline)
                         }
 

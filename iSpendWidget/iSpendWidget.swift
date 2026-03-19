@@ -55,17 +55,17 @@ struct iSpendWidgetEntryView: View {
 
             Spacer(minLength: 0)
 
-            Text(entry.snapshot.today.currency())
+            WidgetCurrencyText(amount: entry.snapshot.today)
                 .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(entry.snapshot.week.currency())
+            WidgetCurrencyText(amount: entry.snapshot.week)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.72))
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(entry.snapshot.month.currency())
+            WidgetCurrencyText(amount: entry.snapshot.month)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.46))
                 .frame(maxWidth: .infinity, alignment: .leading)

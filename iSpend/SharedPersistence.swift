@@ -12,7 +12,7 @@ enum SharedPersistence {
             FriendLedgerEntry.self,
             Investment.self,
             FamilySubscription.self,
-            SubscriptionContribution.self,
+            SubscriptionMember.self,
             ExpenseCategory.self,
         ])
     }

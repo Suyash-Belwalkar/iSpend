@@ -31,7 +31,9 @@ enum HomeSheet: Identifiable {
     case editExpense(Expense)
     case addInvestment
     case addFriendEntry
-    case addSubscriptionContribution(FamilySubscription)
+    case addSubscription
+    case addSubscriptionMember(FamilySubscription)
+    case editSubscriptionMember(SubscriptionMember)
     case addCategory
     case editCategory(ExpenseCategory)
 
@@ -49,8 +51,12 @@ enum HomeSheet: Identifiable {
             "add-investment"
         case .addFriendEntry:
             "add-friend-entry"
-        case let .addSubscriptionContribution(subscription):
-            "add-subscription-\(subscription.persistentModelID)"
+        case .addSubscription:
+            "add-subscription"
+        case let .addSubscriptionMember(subscription):
+            "add-subscription-member-\(subscription.persistentModelID)"
+        case let .editSubscriptionMember(member):
+            "edit-subscription-member-\(member.persistentModelID)"
         case .addCategory:
             "add-category"
         case let .editCategory(category):
@@ -67,6 +73,29 @@ extension Double {
         formatter.maximumFractionDigits = 2
         formatter.locale = Locale(identifier: "en_IN")
         return formatter.string(from: NSNumber(value: self)) ?? "\(self)"
+    }
+
+    func currencyParts(_ code: String = "INR") -> (symbol: String, value: String) {
+        let formatted = currency(code)
+        let symbol = "₹"
+        if formatted.hasPrefix(symbol) {
+            return (symbol, String(formatted.dropFirst(symbol.count)))
+        }
+        return (symbol, formatted)
+    }
+}
+
+struct CurrencyText: View {
+    let amount: Double
+    var code: String = "INR"
+
+    var body: some View {
+        let parts = amount.currencyParts(code)
+        return HStack(spacing: 0) {
+            Text(parts.symbol)
+                .fontDesign(.default)
+            Text(parts.value)
+        }
     }
 }
 

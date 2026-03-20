@@ -109,6 +109,10 @@ struct BankCardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 }
                 .overlay {
+                    SubtleCardEdgeHighlight()
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                }
+                .overlay {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .stroke(.white.opacity(0.18), lineWidth: 1)
                 }
@@ -245,9 +249,15 @@ struct AnimatedMeshCardGradient: View {
 
     private var meshColors: [Color] {
         [
-            palette[0], palette[1], palette[2],
-            isAnimating ? palette[1] : palette[0], palette[2], palette[1],
-            palette[2], palette[1], palette[0]
+            palette[0].opacity(0.96),
+            palette[0].mix(with: palette[1], amount: 0.24),
+            palette[1].opacity(0.9),
+            palette[0].mix(with: palette[2], amount: isAnimating ? 0.18 : 0.32),
+            palette[1].mix(with: palette[2], amount: 0.28),
+            palette[2].opacity(0.84),
+            palette[2].mix(with: palette[0], amount: 0.12),
+            palette[2].mix(with: palette[1], amount: isAnimating ? 0.22 : 0.12),
+            palette[2].opacity(0.98)
         ]
     }
 
@@ -264,6 +274,44 @@ struct AnimatedMeshCardGradient: View {
             withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
                 isAnimating.toggle()
             }
+        }
+    }
+}
+
+private struct SubtleCardEdgeHighlight: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.18),
+                    .clear,
+                    .clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.16),
+                    .clear
+                ],
+                center: .topTrailing,
+                startRadius: 4,
+                endRadius: 120
+            )
+            .blendMode(.screen)
+
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.08),
+                    .clear
+                ],
+                center: .bottomLeading,
+                startRadius: 8,
+                endRadius: 90
+            )
+            .blendMode(.screen)
         }
     }
 }

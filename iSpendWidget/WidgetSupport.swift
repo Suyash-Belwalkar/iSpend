@@ -164,22 +164,51 @@ struct WidgetMeshGradientBackground: View {
     }
 
     var body: some View {
-        MeshGradient(
-            width: 3,
-            height: 3,
-            points: [
-                SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
-                SIMD2(0.0, 0.5), SIMD2(0.56, 0.5), SIMD2(1.0, 0.62),
-                SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
-            ],
-            colors: [
-                palette[0], palette[1], palette[2],
-                palette[0], palette[2], palette[1],
-                palette[2], palette[1], palette[0]
-            ]
-        )
-        .saturation(1.08)
-        .brightness(-0.03)
+        ZStack {
+            MeshGradient(
+                width: 3,
+                height: 3,
+                points: [
+                    SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
+                    SIMD2(0.0, 0.5), SIMD2(0.56, 0.5), SIMD2(1.0, 0.62),
+                    SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
+                ],
+                colors: [
+                    palette[0].opacity(0.96),
+                    palette[0].mix(with: palette[1], amount: 0.24),
+                    palette[1].opacity(0.9),
+                    palette[0].mix(with: palette[2], amount: 0.3),
+                    palette[1].mix(with: palette[2], amount: 0.28),
+                    palette[2].opacity(0.84),
+                    palette[2].mix(with: palette[0], amount: 0.12),
+                    palette[2].mix(with: palette[1], amount: 0.16),
+                    palette[2].opacity(0.98)
+                ]
+            )
+            .saturation(1.06)
+            .brightness(-0.03)
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.14),
+                    .clear,
+                    .clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.12),
+                    .clear
+                ],
+                center: .topTrailing,
+                startRadius: 4,
+                endRadius: 90
+            )
+            .blendMode(.screen)
+        }
     }
 }
 

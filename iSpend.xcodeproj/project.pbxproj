@@ -52,11 +52,21 @@
 			);
 			target = DF1249402F6CAE1600AA2498 /* iSpendWidgetExtension */;
 		};
+		DF1249642F6CC84300AA2498 /* Exceptions for "iSpend" folder in "iSpend" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = DF12490C2F6C3CF900AA2498 /* iSpend */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		DF12490F2F6C3CF900AA2498 /* iSpend */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				DF1249642F6CC84300AA2498 /* Exceptions for "iSpend" folder in "iSpend" target */,
+			);
 			path = iSpend;
 			sourceTree = "<group>";
 		};
@@ -381,6 +391,7 @@
 				DEVELOPMENT_TEAM = MB5DS33BP9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iSpend/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -414,6 +425,7 @@
 				DEVELOPMENT_TEAM = MB5DS33BP9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iSpend/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

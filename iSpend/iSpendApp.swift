@@ -10,6 +10,8 @@ import SwiftUI
 
 @main
 struct iSpendApp: App {
+    @UIApplicationDelegateAdaptor(QuickActionAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             ContentView()

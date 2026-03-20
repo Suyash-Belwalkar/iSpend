@@ -43,6 +43,20 @@ struct iSpendWidgetProvider: AppIntentTimelineProvider {
 struct iSpendWidgetEntryView: View {
     let entry: iSpendWidgetProvider.Entry
 
+    private func amountLine(_ amount: Double, size: CGFloat, opacity: Double) -> some View {
+        let parts = amount.currencyParts()
+
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(parts.symbol)
+                .font(.system(size: size, weight: .bold, design: .default))
+                .fontDesign(.default)
+            Text(parts.value)
+                .font(.system(size: size, weight: .bold, design: .rounded))
+        }
+        .foregroundStyle(.white.opacity(opacity))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -55,31 +69,15 @@ struct iSpendWidgetEntryView: View {
 
             Spacer(minLength: 0)
 
-            WidgetCurrencyText(amount: entry.snapshot.today)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            WidgetCurrencyText(amount: entry.snapshot.week)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.72))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            WidgetCurrencyText(amount: entry.snapshot.month)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.46))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            amountLine(entry.snapshot.today, size: 30, opacity: 1)
+            amountLine(entry.snapshot.week, size: 22, opacity: 0.72)
+            amountLine(entry.snapshot.month, size: 18, opacity: 0.46)
         }
         .ignoresSafeArea()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .containerBackground(
-            LinearGradient(
-                colors: entry.snapshot.colors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            for: .widget
-        )
+        .containerBackground(for: .widget) {
+            WidgetMeshGradientBackground(colors: entry.snapshot.colors)
+        }
     }
 }
 

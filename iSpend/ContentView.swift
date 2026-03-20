@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var quickActionRouter = QuickActionRouter.shared
     @Query(sort: \BankAccount.sortOrder) private var accounts: [BankAccount]
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
     @Query(sort: \FriendLedgerEntry.date, order: .reverse) private var friendEntries: [FriendLedgerEntry]
@@ -45,11 +46,20 @@ struct ContentView: View {
             if selectedAccountID == nil {
                 selectedAccountID = accounts.first?.persistentModelID
             }
+            handleQuickActionIfNeeded()
         }
         .onChange(of: accounts.count) { _, _ in
             if selectedAccount == nil {
                 selectedAccountID = accounts.first?.persistentModelID
             }
+            handleQuickActionIfNeeded()
+        }
+        .onChange(of: quickActionRouter.pendingAction) { _, _ in
+            handleQuickActionIfNeeded()
+        }
+        .onOpenURL { url in
+            guard let action = AppDeepLink.action(for: url) else { return }
+            quickActionRouter.trigger(action)
         }
     }
 
@@ -111,6 +121,11 @@ struct ContentView: View {
         .padding(.bottom, 12)
     }
 
+    private func handleQuickActionIfNeeded() {
+        guard quickActionRouter.consume() == .addExpense else { return }
+        activeSheet = .addExpense
+    }
+
     // MARK: - Sheet Content
 
     @ViewBuilder
@@ -128,6 +143,8 @@ struct ContentView: View {
             InvestmentSheet()
         case .addFriendEntry:
             FriendEntrySheet()
+        case let .editFriendEntry(entry):
+            FriendEntrySheet(entry: entry)
         case .addSubscription:
             SubscriptionSheet()
         case let .addSubscriptionMember(subscription):
@@ -155,7 +172,11 @@ struct ContentView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 NavigationLink {
-                    BankInsightsView(account: account, expenses: expenses)
+                    BankInsightsView(
+                        account: account,
+                        expenses: expenses,
+                        onSelectExpense: { activeSheet = .editExpense($0) }
+                    )
                 } label: {
                     BankCardView(account: account, expenses: expenses)
                 }
@@ -220,7 +241,10 @@ struct ContentView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            FriendsView { activeSheet = .addFriendEntry }
+                            FriendsView(
+                                onAdd: { activeSheet = .addFriendEntry },
+                                onEditEntry: { activeSheet = .editFriendEntry($0) }
+                            )
                         } label: {
                             FriendsOverviewCard(summary: friendSummary)
                         }
@@ -303,23 +327,53 @@ struct ContentView: View {
     private func seedDataIfNeeded() {
         var didMutateSharedData = false
 
-        let defaultCategoryColors: [String: String] = [
-            "Food": "#FF7A1A",
-            "Diet": "#2FBF71",
-            "Gym": "#4F46E5",
-            "Shopping": "#FF4D8D",
-            "Turf": "#12B981",
-            "Subscription": "#38BDF8",
+        let defaultCategories: [(name: String, colorHex: String, isParent: Bool)] = [
+            ("Family", "#FF3B30", true),
+            ("Friends", "#AF52DE", true),
+            ("Gym", "#AF52DE", true),
+            ("Food", "#FF9500", false),
+            ("Sports", "#34C759", false),
+            ("Shopping", "#FF2D55", false),
+            ("Subscription", "#007AFF", false),
         ]
 
-        for (name, colorHex) in defaultCategoryColors {
-            if let existingCategory = categories.first(where: { $0.name == name }) {
-                if existingCategory.colorHex != colorHex {
-                    existingCategory.colorHex = colorHex
+        if let turfCategory = categories.first(where: { $0.normalizedName == "turf" }) {
+            if turfCategory.name != "Sports" {
+                turfCategory.name = "Sports"
+                didMutateSharedData = true
+            }
+            if turfCategory.colorHex != "#34C759" {
+                turfCategory.colorHex = "#34C759"
+                didMutateSharedData = true
+            }
+            if turfCategory.isParentCategory {
+                turfCategory.isParentCategory = false
+                didMutateSharedData = true
+            }
+        }
+
+        if let dietCategory = categories.first(where: { $0.normalizedName == "diet" }) {
+            modelContext.delete(dietCategory)
+            didMutateSharedData = true
+        }
+
+        for category in categories where ["family", "friends", "gym"].contains(category.normalizedName) && !category.isParentCategory {
+            category.isParentCategory = true
+            didMutateSharedData = true
+        }
+
+        for (name, colorHex, isParent) in defaultCategories {
+            if let existingCategory = categories.first(where: { $0.normalizedName == name.lowercased() }) {
+                if existingCategory.isParentCategory != isParent {
+                    existingCategory.isParentCategory = isParent
+                    didMutateSharedData = true
+                }
+                if existingCategory.name != name {
+                    existingCategory.name = name
                     didMutateSharedData = true
                 }
             } else {
-                modelContext.insert(ExpenseCategory(name: name, colorHex: colorHex))
+                modelContext.insert(ExpenseCategory(name: name, colorHex: colorHex, isParentCategory: isParent))
                 didMutateSharedData = true
             }
         }

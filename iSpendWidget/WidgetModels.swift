@@ -36,10 +36,12 @@ final class BankAccount {
 final class ExpenseCategory {
     var name: String
     var colorHex: String
+    var isParentCategory: Bool
 
-    init(name: String, colorHex: String) {
+    init(name: String, colorHex: String, isParentCategory: Bool = false) {
         self.name = name
         self.colorHex = colorHex
+        self.isParentCategory = isParentCategory
     }
 }
 
@@ -79,6 +81,22 @@ final class Expense {
     }
 }
 
+extension ExpenseCategory {
+    var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+extension Expense {
+    func effectiveCategoryColorHex(from categories: [ExpenseCategory]) -> String? {
+        if let parentContextRawValue,
+           let parentCategory = categories.first(where: { $0.isParentCategory && $0.normalizedName == parentContextRawValue.lowercased() }) {
+            return parentCategory.colorHex
+        }
+        return category?.colorHex
+    }
+}
+
 enum WidgetSharedPersistence {
     static let appGroupID = "group.me.suyash.belwalkar.iSpend"
     static let storeName = "iSpend.store"
@@ -98,7 +116,29 @@ enum WidgetSharedPersistence {
     }
 
     static var modelContainer: ModelContainer = {
-        let configuration = ModelConfiguration(schema: schema, url: sharedURL)
-        return try! ModelContainer(for: schema, configurations: [configuration])
+        makeModelContainer()
     }()
+
+    private static func makeModelContainer() -> ModelContainer {
+        let configuration = ModelConfiguration(schema: schema, url: sharedURL)
+        do {
+            return try ModelContainer(for: schema, configurations: [configuration])
+        } catch {
+            resetSharedStore()
+            return try! ModelContainer(for: schema, configurations: [configuration])
+        }
+    }
+
+    private static func resetSharedStore() {
+        let fileManager = FileManager.default
+        let urls = [
+            sharedURL,
+            sharedURL.appendingPathExtension("shm"),
+            sharedURL.appendingPathExtension("wal"),
+        ]
+
+        for url in urls where fileManager.fileExists(atPath: url.path) {
+            try? fileManager.removeItem(at: url)
+        }
+    }
 }

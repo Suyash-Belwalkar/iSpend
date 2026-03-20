@@ -102,6 +102,10 @@ struct ExpenseFormSheet: View {
     @State private var selectedCategoryID: PersistentIdentifier?
     @State private var note = ""
 
+    private var subcategories: [ExpenseCategory] {
+        categories.filter { !$0.isParentCategory }
+    }
+
     init(expense: Expense? = nil, account: BankAccount?) {
         self.expense = expense
         self.account = account
@@ -116,9 +120,9 @@ struct ExpenseFormSheet: View {
 
     private var selectedCategory: ExpenseCategory? {
         if let selectedCategoryID {
-            return categories.first(where: { $0.persistentModelID == selectedCategoryID })
+            return subcategories.first(where: { $0.persistentModelID == selectedCategoryID })
         }
-        return categories.first
+        return subcategories.first
     }
 
     var body: some View {
@@ -141,7 +145,7 @@ struct ExpenseFormSheet: View {
                         }
                     }
                     Picker("Category", selection: $selectedCategoryID) {
-                        ForEach(categories) { category in
+                        ForEach(subcategories) { category in
                             Text(category.name)
                                 .tag(Optional(category.persistentModelID))
                         }
@@ -208,18 +212,44 @@ struct ExpenseFormSheet: View {
 struct FriendEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \FriendLedgerEntry.friendName) private var existingEntries: [FriendLedgerEntry]
+
+    let entry: FriendLedgerEntry?
 
     @State private var friendName = ""
     @State private var amount = 0.0
     @State private var date = Date()
     @State private var direction: FriendDirection = .owesMe
     @State private var note = ""
+    @State private var isSettled = false
+
+    private var friendNames: [String] {
+        Array(Set(existingEntries.map(\.friendName))).sorted()
+    }
+
+    init(entry: FriendLedgerEntry? = nil) {
+        self.entry = entry
+        _friendName = State(initialValue: entry?.friendName ?? "")
+        _amount = State(initialValue: entry?.amount ?? 0)
+        _date = State(initialValue: entry?.date ?? .now)
+        _direction = State(initialValue: entry?.direction ?? .owesMe)
+        _note = State(initialValue: entry?.visibleNote ?? "")
+        _isSettled = State(initialValue: entry?.isSettled ?? false)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Friend Ledger") {
-                    TextField("Friend name", text: $friendName)
+                    if !friendNames.isEmpty {
+                        Picker("Friend", selection: $friendName) {
+                            Text("New Friend").tag("")
+                            ForEach(friendNames, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                    }
+                    TextField(friendName.isEmpty ? "Friend name" : "Friend name", text: $friendName)
                     TextField("Amount", value: $amount, format: .number)
                         .keyboardType(.decimalPad)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
@@ -228,32 +258,54 @@ struct FriendEntrySheet: View {
                             Text(value == .owesMe ? "Owes me" : "I owe").tag(value)
                         }
                     }
+                    Toggle("Marked as paid", isOn: $isSettled)
                     TextField("Note", text: $note)
                 }
             }
-            .navigationTitle("Add Friend Entry")
+            .navigationTitle(entry == nil ? "Add Friend Entry" : "Edit Friend Entry")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save", action: save)
+                    Button(entry == nil ? "Save" : "Update", action: save)
                         .disabled(friendName.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
+                }
+                if entry != nil {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("Delete", role: .destructive, action: deleteEntry)
+                    }
                 }
             }
         }
     }
 
     private func save() {
-        modelContext.insert(
-            FriendLedgerEntry(
+        if let entry {
+            entry.friendName = friendName.trimmingCharacters(in: .whitespacesAndNewlines)
+            entry.amount = amount
+            entry.date = date
+            entry.direction = direction
+            entry.note = note
+            entry.isSettled = isSettled
+        } else {
+            let newEntry = FriendLedgerEntry(
                 friendName: friendName.trimmingCharacters(in: .whitespacesAndNewlines),
                 amount: amount,
                 date: date,
                 direction: direction,
                 note: note
             )
-        )
+            newEntry.isSettled = isSettled
+            modelContext.insert(newEntry)
+        }
+        WidgetReloader.reload()
+        dismiss()
+    }
+
+    private func deleteEntry() {
+        guard let entry else { return }
+        modelContext.delete(entry)
         WidgetReloader.reload()
         dismiss()
     }
@@ -440,11 +492,13 @@ struct CategorySheet: View {
 
     @State private var name = ""
     @State private var selectedColor: Color = .orange
+    @State private var isParentCategory = false
 
     init(category: ExpenseCategory? = nil) {
         self.category = category
         _name = State(initialValue: category?.name ?? "")
         _selectedColor = State(initialValue: Color(hex: category?.colorHex ?? "#FF9500"))
+        _isParentCategory = State(initialValue: category?.isParentCategory ?? false)
     }
 
     var body: some View {
@@ -452,6 +506,7 @@ struct CategorySheet: View {
             Form {
                 Section("Category") {
                     TextField("Name", text: $name)
+                    Toggle("Parent Category", isOn: $isParentCategory)
                     ColorPicker("Color", selection: $selectedColor, supportsOpacity: false)
                 }
             }
@@ -472,11 +527,13 @@ struct CategorySheet: View {
         if let category {
             category.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             category.colorHex = selectedColor.hexString
+            category.isParentCategory = isParentCategory
         } else {
             modelContext.insert(
                 ExpenseCategory(
                     name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                    colorHex: selectedColor.hexString
+                    colorHex: selectedColor.hexString,
+                    isParentCategory: isParentCategory
                 )
             )
         }

@@ -24,7 +24,29 @@ enum SharedPersistence {
     }
 
     static var sharedModelContainer: ModelContainer = {
-        let configuration = ModelConfiguration(schema: schema, url: sharedURL)
-        return try! ModelContainer(for: schema, configurations: [configuration])
+        makeModelContainer()
     }()
+
+    private static func makeModelContainer() -> ModelContainer {
+        let configuration = ModelConfiguration(schema: schema, url: sharedURL)
+        do {
+            return try ModelContainer(for: schema, configurations: [configuration])
+        } catch {
+            resetSharedStore()
+            return try! ModelContainer(for: schema, configurations: [configuration])
+        }
+    }
+
+    private static func resetSharedStore() {
+        let fileManager = FileManager.default
+        let urls = [
+            sharedURL,
+            sharedURL.appendingPathExtension("shm"),
+            sharedURL.appendingPathExtension("wal"),
+        ]
+
+        for url in urls where fileManager.fileExists(atPath: url.path) {
+            try? fileManager.removeItem(at: url)
+        }
+    }
 }

@@ -17,6 +17,19 @@ struct FriendSummary {
     let names: [String]
 }
 
+struct FriendBalance {
+    let name: String
+    let netAmount: Double
+
+    var direction: FriendDirection {
+        netAmount >= 0 ? .owesMe : .iOwe
+    }
+
+    var absoluteAmount: Double {
+        abs(netAmount)
+    }
+}
+
 struct YearlyExpenseTotals {
     let today: Double
     let week: Double
@@ -31,6 +44,7 @@ enum HomeSheet: Identifiable {
     case editExpense(Expense)
     case addInvestment
     case addFriendEntry
+    case editFriendEntry(FriendLedgerEntry)
     case addSubscription
     case addSubscriptionMember(FamilySubscription)
     case editSubscriptionMember(SubscriptionMember)
@@ -51,6 +65,8 @@ enum HomeSheet: Identifiable {
             "add-investment"
         case .addFriendEntry:
             "add-friend-entry"
+        case let .editFriendEntry(entry):
+            "edit-friend-entry-\(entry.persistentModelID)"
         case .addSubscription:
             "add-subscription"
         case let .addSubscriptionMember(subscription):
@@ -201,9 +217,23 @@ extension Array where Element == Expense {
 
 extension Array where Element == FriendLedgerEntry {
     var summary: FriendSummary {
-        let owedToMe = filter { $0.direction == .owesMe }.reduce(0) { $0 + $1.amount }
-        let iOwe = filter { $0.direction == .iOwe }.reduce(0) { $0 + $1.amount }
+        let unsettled = filter { !$0.isSettled }
+        let owedToMe = unsettled.filter { $0.direction == .owesMe }.reduce(0) { $0 + $1.amount }
+        let iOwe = unsettled.filter { $0.direction == .iOwe }.reduce(0) { $0 + $1.amount }
         let names = Array<String>(Set<String>(self.map { $0.friendName })).sorted()
         return FriendSummary(owedToMe: owedToMe, iOwe: iOwe, names: names)
+    }
+
+    var balancesByFriend: [FriendBalance] {
+        Dictionary(grouping: self, by: \.friendName)
+            .map { name, entries in
+                let net = entries
+                    .filter { !$0.isSettled }
+                    .reduce(0.0) { partialResult, entry in
+                    partialResult + (entry.direction == .owesMe ? entry.amount : -entry.amount)
+                }
+                return FriendBalance(name: name, netAmount: net)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }

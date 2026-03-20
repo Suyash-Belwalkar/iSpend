@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct ExpenseRowView: View {
     let expense: Expense
@@ -54,6 +55,7 @@ struct DailyBreakdownView: View {
 struct BankCardView: View {
     let account: BankAccount
     let expenses: [Expense]
+    @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
     var balance: Double {
         expenses
@@ -68,19 +70,22 @@ struct BankCardView: View {
             $0.direction == .spent
         }
 
-        let grouped = Dictionary(grouping: monthExpenses, by: \.category)
-        let ranked: [(category: ExpenseCategory, total: Double)] = grouped.compactMap { entry in
-            guard let category = entry.key else { return nil }
+        let grouped = Dictionary(grouping: monthExpenses) { expense in
+            expense.effectiveCategoryName(from: categories) ?? "uncategorized"
+        }
+        let ranked: [(categoryName: String, total: Double)] = grouped.map { entry in
             let total = entry.value.reduce(0) { partialResult, expense in
                 partialResult + expense.amount
             }
-            return (category: category, total: total)
+            return (categoryName: entry.key, total: total)
         }
 
         return ranked
             .sorted { lhs, rhs in lhs.total > rhs.total }
             .prefix(3)
-            .map(\.category)
+            .compactMap { item in
+                categories.first(where: { $0.normalizedName == item.categoryName.lowercased() })
+            }
     }
 
     var palette: [Color] {
@@ -95,9 +100,9 @@ struct BankCardView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(gradient)
+                .fill(.clear)
                 .overlay {
-                    AnimatedCardGradient(
+                    AnimatedMeshCardGradient(
                         colors: palette
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -207,6 +212,59 @@ struct AnimatedCardGradient: View {
             .blur(radius: 34)
             .position(x: x, y: y)
             .animation(.easeInOut(duration: duration).repeatForever(autoreverses: true), value: animationValue)
+    }
+}
+
+struct AnimatedMeshCardGradient: View {
+    let colors: [Color]
+
+    @State private var isAnimating = false
+
+    private var palette: [Color] {
+        let fallback = [Color.blue, Color.cyan, Color.indigo]
+        let resolved = colors.isEmpty ? fallback : colors
+
+        if resolved.count >= 3 {
+            return Array(resolved.prefix(3))
+        }
+
+        if resolved.count == 2 {
+            return [resolved[0], resolved[1], resolved[0].mix(with: resolved[1], amount: 0.45)]
+        }
+
+        return [resolved[0], resolved[0].opacity(0.92), resolved[0].opacity(0.8)]
+    }
+
+    private var points: [SIMD2<Float>] {
+        [
+            SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
+            SIMD2(0.0, 0.5), SIMD2(isAnimating ? 0.18 : 0.78, 0.5), SIMD2(1.0, isAnimating ? 0.5 : 1.0),
+            SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
+        ]
+    }
+
+    private var meshColors: [Color] {
+        [
+            palette[0], palette[1], palette[2],
+            isAnimating ? palette[1] : palette[0], palette[2], palette[1],
+            palette[2], palette[1], palette[0]
+        ]
+    }
+
+    var body: some View {
+        MeshGradient(
+            width: 3,
+            height: 3,
+            points: points,
+            colors: meshColors
+        )
+        .saturation(1.04)
+        .brightness(-0.02)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
+                isAnimating.toggle()
+            }
+        }
     }
 }
 
@@ -489,31 +547,49 @@ struct FriendsView: View {
     @Query(sort: \FriendLedgerEntry.date, order: .reverse) private var entries: [FriendLedgerEntry]
 
     let onAdd: () -> Void
+    let onEditEntry: (FriendLedgerEntry) -> Void
 
     var groupedEntries: [String: [FriendLedgerEntry]] {
         Dictionary(grouping: entries, by: \.friendName)
     }
 
+    var balances: [FriendBalance] {
+        entries.balancesByFriend
+    }
+
     var body: some View {
         List {
-            ForEach(groupedEntries.keys.sorted(), id: \.self) { name in
-                if let ledger = groupedEntries[name] {
-                    Section(name) {
+            ForEach(balances, id: \.name) { balance in
+                if let ledger = groupedEntries[balance.name] {
+                    Section {
                         ForEach(ledger) { entry in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(entry.direction == .owesMe ? "Owes me" : "I owe")
-                                    Text(entry.date, style: .date)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                CurrencyText(amount: entry.amount)
-                                    .foregroundStyle(entry.direction == .owesMe ? .green : .red)
+                            Button {
+                                onEditEntry(entry)
+                            } label: {
+                                FriendLedgerRow(entry: entry)
                             }
+                            .buttonStyle(.plain)
                         }
                         .onDelete { offsets in
                             delete(from: ledger, at: offsets)
+                        }
+                    } header: {
+                        HStack {
+                            Text(balance.name)
+                            Spacer()
+                            if balance.absoluteAmount == 0 {
+                                Text("Settled")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                HStack(spacing: 6) {
+                                    CurrencyText(amount: balance.absoluteAmount)
+                                        .foregroundStyle(balance.direction == .owesMe ? .green : .red)
+                                    Text(balance.direction == .owesMe ? "He owes" : "I owe")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(balance.direction == .owesMe ? .green : .red)
+                                }
+                            }
                         }
                     }
                 }
@@ -533,6 +609,44 @@ struct FriendsView: View {
         for index in offsets {
             modelContext.delete(ledger[index])
         }
+    }
+}
+
+private struct FriendLedgerRow: View {
+    let entry: FriendLedgerEntry
+
+    private var title: String {
+        if entry.isSettled { return "Paid" }
+        return entry.direction == .owesMe ? "Owes me" : "I owe"
+    }
+
+    private var amountColor: Color {
+        if entry.isSettled { return .secondary }
+        return entry.direction == .owesMe ? .green : .red
+    }
+
+    private var rowOpacity: Double {
+        entry.isSettled ? 0.58 : 1
+    }
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                Text(entry.date, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !entry.visibleNote.isEmpty {
+                    Text(entry.visibleNote)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+            CurrencyText(amount: entry.amount)
+                .foregroundStyle(amountColor)
+        }
+        .opacity(rowOpacity)
     }
 }
 
@@ -614,6 +728,14 @@ struct SettingsView: View {
     let onAddCategory: () -> Void
     let onEditCategory: (ExpenseCategory) -> Void
 
+    private var parentCategories: [ExpenseCategory] {
+        categories.filter(\.isParentCategory)
+    }
+
+    private var subcategories: [ExpenseCategory] {
+        categories.filter { !$0.isParentCategory }
+    }
+
     var body: some View {
         List {
             Section("Accounts") {
@@ -643,8 +765,8 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Categories") {
-                ForEach(categories) { category in
+            Section("Parent Categories") {
+                ForEach(parentCategories) { category in
                     Button {
                         onEditCategory(category)
                     } label: {
@@ -663,7 +785,34 @@ struct SettingsView: View {
                 }
                 .onDelete { offsets in
                     for index in offsets {
-                        modelContext.delete(categories[index])
+                        modelContext.delete(parentCategories[index])
+                    }
+                }
+
+                Button("Add Parent Category", action: onAddCategory)
+            }
+
+            Section("Categories") {
+                ForEach(subcategories) { category in
+                    Button {
+                        onEditCategory(category)
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(Color(hex: category.colorHex))
+                                .frame(width: 18, height: 18)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(category.name)
+                                    .foregroundStyle(.primary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .onDelete { offsets in
+                    for index in offsets {
+                        modelContext.delete(subcategories[index])
                     }
                 }
 
@@ -677,50 +826,260 @@ struct SettingsView: View {
 struct BankInsightsView: View {
     let account: BankAccount
     let expenses: [Expense]
+    let onSelectExpense: (Expense) -> Void
 
-    var categoryTotals: [(ExpenseCategory, Double)] {
-        let scoped = expenses.filter {
-            $0.account?.persistentModelID == account.persistentModelID && $0.direction == .spent
+    @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
+
+    @State private var selectedCategoryID: PersistentIdentifier?
+
+    private var scopedExpenses: [Expense] {
+        expenses
+            .filter {
+                $0.account?.persistentModelID == account.persistentModelID &&
+                $0.direction == .spent
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    private var categoryTotals: [(category: ExpenseCategory, total: Double)] {
+        let grouped = Dictionary(grouping: scopedExpenses) { expense in
+            expense.effectiveCategoryName(from: categories) ?? "uncategorized"
         }
-        let grouped = Dictionary(grouping: scoped, by: \.category)
-        return grouped.compactMap { category, rows in
-            guard let category else { return nil }
+        return grouped.compactMap { categoryName, rows in
+            guard let category = categories.first(where: { $0.normalizedName == categoryName.lowercased() }) else { return nil }
             return (category, rows.reduce(0) { $0 + $1.amount })
         }
-        .sorted { $0.1 > $1.1 }
+        .sorted { $0.total > $1.total }
+    }
+
+    private var selectedCategory: ExpenseCategory? {
+        guard let selectedCategoryID else { return nil }
+        return categoryTotals.first { $0.category.persistentModelID == selectedCategoryID }?.category
+    }
+
+    private var filteredExpenses: [Expense] {
+        guard let selectedCategoryID else { return scopedExpenses }
+        guard let selectedCategory = categories.first(where: { $0.persistentModelID == selectedCategoryID }) else { return scopedExpenses }
+        return scopedExpenses.filter {
+            $0.effectiveCategoryName(from: categories)?.lowercased() == selectedCategory.normalizedName
+        }
+    }
+
+    private var groupedExpenses: [(String, [Expense])] {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+
+        let grouped = Dictionary(grouping: filteredExpenses) { expense in
+            formatter.string(from: expense.date)
+        }
+
+        let sortedKeys = grouped.keys.sorted { lhs, rhs in
+            guard
+                let leftDate = formatter.date(from: lhs),
+                let rightDate = formatter.date(from: rhs)
+            else {
+                return lhs > rhs
+            }
+            return leftDate > rightDate
+        }
+
+        return sortedKeys.map { key in
+            let values = (grouped[key] ?? []).sorted { $0.date > $1.date }
+            return (key, values)
+        }
+    }
+
+    private var totalAmount: Double {
+        filteredExpenses.reduce(0) { $0 + $1.amount }
+    }
+
+    private func percentage(for total: Double) -> Int {
+        let grandTotal = categoryTotals.reduce(0) { $0 + $1.total }
+        guard grandTotal > 0 else { return 0 }
+        return Int((total / grandTotal * 100).rounded())
     }
 
     var body: some View {
-        List {
-            Section("Category Distribution") {
-                ForEach(categoryTotals, id: \.0.persistentModelID) { category, total in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Label(category.name, systemImage: "circle.fill")
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(Color(hex: category.colorHex), Color(hex: category.colorHex))
-                            Spacer()
-                            CurrencyText(amount: total)
-                                .font(.headline)
-                        }
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Categories")
+                    .font(.largeTitle.bold())
+                    .padding(.leading, 16)
 
-                        GeometryReader { proxy in
-                            let maxValue = categoryTotals.first?.1 ?? 1
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color(hex: category.colorHex).opacity(0.2))
-                                .overlay(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(Color(hex: category.colorHex))
-                                        .frame(width: max(proxy.size.width * (total / maxValue), 10))
+                ZStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(categoryTotals, id: \.category.persistentModelID) { item in
+                                let isDimmed = selectedCategoryID != nil
+
+                                Button {
+                                    withAnimation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22)) {
+                                        selectedCategoryID = item.category.persistentModelID
+                                    }
+                                } label: {
+                                    InsightCategoryCard(
+                                        category: item.category,
+                                        total: item.total,
+                                        percentage: percentage(for: item.total),
+                                        isSelected: false
+                                    )
+                                    .frame(width: 130, height: 270)
+                                    .opacity(isDimmed ? 0 : 1)
+                                    .scaleEffect(isDimmed ? 0.995 : 1)
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(selectedCategoryID != nil)
+                            }
                         }
-                        .frame(height: 12)
+                        .padding(.leading, 16)
+                        .padding(.trailing, 20)
+                        .scrollClipDisabled()
                     }
-                    .padding(.vertical, 6)
+                    .scrollDisabled(selectedCategoryID != nil)
+
+                    if let selectedCategory,
+                       let selectedItem = categoryTotals.first(where: { $0.category.persistentModelID == selectedCategory.persistentModelID }) {
+                        Button {
+                            withAnimation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22)) {
+                                selectedCategoryID = nil
+                            }
+                        } label: {
+                            InsightCategoryCard(
+                                category: selectedItem.category,
+                                total: selectedItem.total,
+                                percentage: percentage(for: selectedItem.total),
+                                isSelected: true
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 270, maxHeight: 270)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .center)),
+                                removal: .opacity
+                            ))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .zIndex(1)
+                    }
+                }
+                .frame(height: 270)
+            }
+            .animation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22), value: selectedCategoryID)
+
+            List {
+                Section {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Transactions")
+                            .font(.title.bold())
+                        Spacer()
+                        CurrencyText(amount: totalAmount)
+                            .font(.title2.bold())
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+
+                    Text(selectedCategory?.name ?? "All Categories")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+                        .listRowBackground(Color.clear)
+                }
+
+                if groupedExpenses.isEmpty {
+                    Section {
+                        ContentUnavailableView(
+                            "No Expenses",
+                            systemImage: "list.bullet.rectangle",
+                            description: Text("Transactions for this category will appear here.")
+                        )
+                    }
+                } else {
+                    ForEach(groupedExpenses, id: \.0) { sectionTitle, rows in
+                        Section(sectionTitle) {
+                            ForEach(rows) { expense in
+                                Button {
+                                    onSelectExpense(expense)
+                                } label: {
+                                    ExpenseRowView(expense: expense)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
         }
+        .background(Color(.systemBackground))
         .navigationTitle(account.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct InsightCategoryCard: View {
+    let category: ExpenseCategory
+    let total: Double
+    let percentage: Int
+    let isSelected: Bool
+
+    private var tint: Color {
+        Color(hex: category.colorHex)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            tint.opacity(0.95),
+                            tint.opacity(0.72)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.14), lineWidth: 1)
+                }
+                .shadow(color: tint.opacity(0.26), radius: isSelected ? 26 : 16, y: 14)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(category.name)
+                    .font(isSelected ? .system(size: 28, weight: .bold, design: .rounded) : .title2.bold())
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+
+                Text("spent \(percentage)%")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.82))
+
+                if isSelected {
+                    CurrencyText(amount: total)
+                        .font(.title.bold())
+                        .foregroundStyle(.white)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                Spacer(minLength: 0)
+
+                HStack {
+                    Image(systemName: "circle.hexagongrid.fill")
+                        .font(isSelected ? .system(size: 34) : .title2)
+                        .foregroundStyle(.white.opacity(0.18))
+                    Spacer()
+                    Capsule()
+                        .fill(.white.opacity(0.3))
+                        .frame(width: 10, height: isSelected ? 112 : 78)
+                }
+            }
+            .padding(18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(height: 270)
+        .contentShape(.rect)
     }
 }
 
@@ -744,5 +1103,39 @@ struct AccountTabButton: View {
                 }
         }
         .contentShape(.capsule)
+    }
+}
+
+private extension Color {
+    func mix(with other: Color, amount: Double) -> Color {
+        let fraction = min(max(amount, 0), 1)
+        return Color(
+            UIColor(self).mixed(with: UIColor(other), amount: fraction)
+        )
+    }
+}
+
+private extension UIColor {
+    func mixed(with other: UIColor, amount: Double) -> UIColor {
+        let fraction = CGFloat(min(max(amount, 0), 1))
+
+        var r1: CGFloat = 0
+        var g1: CGFloat = 0
+        var b1: CGFloat = 0
+        var a1: CGFloat = 0
+        var r2: CGFloat = 0
+        var g2: CGFloat = 0
+        var b2: CGFloat = 0
+        var a2: CGFloat = 0
+
+        getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return UIColor(
+            red: r1 + (r2 - r1) * fraction,
+            green: g1 + (g2 - g1) * fraction,
+            blue: b1 + (b2 - b1) * fraction,
+            alpha: a1 + (a2 - a1) * fraction
+        )
     }
 }

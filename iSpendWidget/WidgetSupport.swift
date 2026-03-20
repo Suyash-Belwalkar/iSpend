@@ -2,6 +2,7 @@ import AppIntents
 import Foundation
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct WidgetAccountEntity: AppEntity, Identifiable {
     let id: String
@@ -80,6 +81,8 @@ enum WidgetDataLoader {
 
         let expenseDescriptor = FetchDescriptor<Expense>()
         let allExpenses = (try? context.fetch(expenseDescriptor)) ?? []
+        let categoryDescriptor = FetchDescriptor<ExpenseCategory>()
+        let allCategories = (try? context.fetch(categoryDescriptor)) ?? []
         let accountExpenses = allExpenses.filter {
             $0.account?.persistentModelID == selectedAccount.persistentModelID
         }
@@ -100,10 +103,12 @@ enum WidgetDataLoader {
             .filter { monthInterval?.contains($0.date) == true && $0.direction == .spent }
         let month = monthRows.reduce(0) { $0 + $1.amount }
 
-        let grouped = Dictionary(grouping: monthRows, by: \.category)
-        let colors = grouped.compactMap { category, expenses -> (String, Double)? in
-            guard let category else { return nil }
-            return (category.colorHex, expenses.reduce(0) { $0 + $1.amount })
+        let grouped = Dictionary(grouping: monthRows) { expense in
+            expense.effectiveCategoryColorHex(from: allCategories) ?? ""
+        }
+        let colors = grouped.compactMap { colorHex, expenses -> (String, Double)? in
+            guard !colorHex.isEmpty else { return nil }
+            return (colorHex, expenses.reduce(0) { $0 + $1.amount })
         }
         .sorted { $0.1 > $1.1 }
         .prefix(3)
@@ -140,16 +145,41 @@ extension Double {
     }
 }
 
-struct WidgetCurrencyText: View {
-    let amount: Double
+struct WidgetMeshGradientBackground: View {
+    let colors: [Color]
+
+    private var palette: [Color] {
+        let fallback = [Color.blue, Color.cyan, Color.indigo]
+        let resolved = colors.isEmpty ? fallback : colors
+
+        if resolved.count >= 3 {
+            return Array(resolved.prefix(3))
+        }
+
+        if resolved.count == 2 {
+            return [resolved[0], resolved[1], resolved[0].mix(with: resolved[1], amount: 0.45)]
+        }
+
+        return [resolved[0], resolved[0].opacity(0.92), resolved[0].opacity(0.8)]
+    }
 
     var body: some View {
-        let parts = amount.currencyParts()
-        return HStack(spacing: 0) {
-            Text(parts.symbol)
-                .fontDesign(.default)
-            Text(parts.value)
-        }
+        MeshGradient(
+            width: 3,
+            height: 3,
+            points: [
+                SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
+                SIMD2(0.0, 0.5), SIMD2(0.56, 0.5), SIMD2(1.0, 0.62),
+                SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
+            ],
+            colors: [
+                palette[0], palette[1], palette[2],
+                palette[0], palette[2], palette[1],
+                palette[2], palette[1], palette[0]
+            ]
+        )
+        .saturation(1.08)
+        .brightness(-0.03)
     }
 }
 
@@ -162,5 +192,37 @@ extension Color {
         let g = Double((int >> 8) & 0xff) / 255
         let b = Double(int & 0xff) / 255
         self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
+    }
+
+    func mix(with other: Color, amount: Double) -> Color {
+        let fraction = min(max(amount, 0), 1)
+        return Color(
+            UIColor(self).mixed(with: UIColor(other), amount: fraction)
+        )
+    }
+}
+
+private extension UIColor {
+    func mixed(with other: UIColor, amount: Double) -> UIColor {
+        let fraction = CGFloat(min(max(amount, 0), 1))
+
+        var r1: CGFloat = 0
+        var g1: CGFloat = 0
+        var b1: CGFloat = 0
+        var a1: CGFloat = 0
+        var r2: CGFloat = 0
+        var g2: CGFloat = 0
+        var b2: CGFloat = 0
+        var a2: CGFloat = 0
+
+        getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return UIColor(
+            red: r1 + (r2 - r1) * fraction,
+            green: g1 + (g2 - g1) * fraction,
+            blue: b1 + (b2 - b1) * fraction,
+            alpha: a1 + (a2 - a1) * fraction
+        )
     }
 }

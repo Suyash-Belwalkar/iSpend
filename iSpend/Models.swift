@@ -28,6 +28,7 @@ enum FriendDirection: String, Codable, CaseIterable, Identifiable {
 enum ExpenseParentContext: String, Codable, CaseIterable, Identifiable {
     case family
     case friends
+    case gym
 
     var id: String { rawValue }
 
@@ -116,13 +117,15 @@ final class Expense {
 final class ExpenseCategory {
     var name: String
     var colorHex: String
+    var isParentCategory: Bool
 
     @Relationship(deleteRule: .nullify, inverse: \Expense.category)
     var expenses: [Expense] = []
 
-    init(name: String, colorHex: String) {
+    init(name: String, colorHex: String, isParentCategory: Bool = false) {
         self.name = name
         self.colorHex = colorHex
+        self.isParentCategory = isParentCategory
     }
 }
 
@@ -227,5 +230,51 @@ extension SubscriptionMember {
     var paidThroughLabel: String {
         guard let paidThroughMonth else { return "Not paid" }
         return FamilySubscription.monthKey(from: paidThroughMonth)
+    }
+}
+
+extension ExpenseCategory {
+    var normalizedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+extension ExpenseParentContext {
+    var normalizedName: String {
+        title.lowercased()
+    }
+}
+
+extension Expense {
+    func effectiveCategoryName(from categories: [ExpenseCategory]) -> String? {
+        if let parentContext,
+           let parentCategory = categories.first(where: { $0.isParentCategory && $0.normalizedName == parentContext.normalizedName }) {
+            return parentCategory.name
+        }
+        return category?.name
+    }
+
+    func effectiveCategoryColorHex(from categories: [ExpenseCategory]) -> String? {
+        if let parentContext,
+           let parentCategory = categories.first(where: { $0.isParentCategory && $0.normalizedName == parentContext.normalizedName }) {
+            return parentCategory.colorHex
+        }
+        return category?.colorHex
+    }
+}
+
+extension FriendLedgerEntry {
+    private static let settledMarker = "[[SETTLED]] "
+
+    var isSettled: Bool {
+        get { note.hasPrefix(Self.settledMarker) }
+        set {
+            let visible = visibleNote
+            note = newValue ? Self.settledMarker + visible : visible
+        }
+    }
+
+    var visibleNote: String {
+        note.hasPrefix(Self.settledMarker) ? String(note.dropFirst(Self.settledMarker.count)) : note
     }
 }

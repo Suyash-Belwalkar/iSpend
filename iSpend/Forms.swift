@@ -89,6 +89,7 @@ struct AddBankAccountSheet: View {
 struct ExpenseFormSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \BankAccount.sortOrder) private var accounts: [BankAccount]
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
     let expense: Expense?
@@ -99,6 +100,7 @@ struct ExpenseFormSheet: View {
     @State private var date = Date()
     @State private var direction: ExpenseDirection = .spent
     @State private var parentContext: ExpenseParentContext?
+    @State private var selectedAccountID: PersistentIdentifier?
     @State private var selectedCategoryID: PersistentIdentifier?
     @State private var note = ""
 
@@ -114,8 +116,16 @@ struct ExpenseFormSheet: View {
         _date = State(initialValue: expense?.date ?? .now)
         _direction = State(initialValue: expense?.direction ?? .spent)
         _parentContext = State(initialValue: expense?.parentContext)
+        _selectedAccountID = State(initialValue: expense?.account?.persistentModelID ?? account?.persistentModelID)
         _selectedCategoryID = State(initialValue: expense?.category?.persistentModelID)
         _note = State(initialValue: expense?.note ?? "")
+    }
+
+    private var selectedAccount: BankAccount? {
+        if let selectedAccountID {
+            return accounts.first(where: { $0.persistentModelID == selectedAccountID })
+        }
+        return account ?? accounts.first
     }
 
     private var selectedCategory: ExpenseCategory? {
@@ -129,6 +139,12 @@ struct ExpenseFormSheet: View {
         NavigationStack {
             Form {
                 Section("Expense") {
+                    Picker("Account", selection: $selectedAccountID) {
+                        ForEach(accounts) { account in
+                            Text(account.name)
+                                .tag(Optional(account.persistentModelID))
+                        }
+                    }
                     TextField("Title", text: $title)
                     TextField("Amount", value: $amount, format: .number)
                         .keyboardType(.decimalPad)
@@ -160,7 +176,7 @@ struct ExpenseFormSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(expense == nil ? "Save" : "Update", action: save)
-                        .disabled(account == nil || selectedCategory == nil || title.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
+                        .disabled(selectedAccount == nil || selectedCategory == nil || title.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
                 }
                 if expense != nil {
                     ToolbarItem(placement: .bottomBar) {
@@ -172,7 +188,7 @@ struct ExpenseFormSheet: View {
     }
 
     private func save() {
-        guard let account else { return }
+        guard let selectedAccount else { return }
 
         if let expense {
             expense.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,7 +198,7 @@ struct ExpenseFormSheet: View {
             expense.parentContext = parentContext
             expense.category = selectedCategory
             expense.note = note
-            expense.account = account
+            expense.account = selectedAccount
         } else {
             let newExpense = Expense(
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -192,7 +208,7 @@ struct ExpenseFormSheet: View {
                 parentContext: parentContext,
                 category: selectedCategory,
                 note: note,
-                account: account
+                account: selectedAccount
             )
             modelContext.insert(newExpense)
         }

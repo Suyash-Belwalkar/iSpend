@@ -48,7 +48,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedAccountID) {
             if let a = sorted[safe: 0] { accountTab(for: a) }
             if let a = sorted[safe: 1] { accountTab(for: a) }
             if let a = sorted[safe: 2] { accountTab(for: a) }
@@ -79,11 +79,14 @@ struct ContentView: View {
 
     // MARK: - Account Tab
 
-    @TabContentBuilder<Never>
-    private func accountTab(for account: BankAccount) -> some TabContent<Never> {
-        Tab(account.name, systemImage: "creditcard"){
+    @TabContentBuilder<PersistentIdentifier?>
+    private func accountTab(for account: BankAccount) -> some TabContent<PersistentIdentifier?> {
+        Tab(account.name, systemImage: "creditcard", value: Optional(account.persistentModelID)) {
             NavigationStack {
                 dashboardContent(for: account)
+                    .onAppear {
+                        selectedAccountID = account.persistentModelID
+                    }
                     .navigationTitle("iSpend")
                     .fontDesign(.rounded)
                     // Float the liquid glass Add button just above the tab bar

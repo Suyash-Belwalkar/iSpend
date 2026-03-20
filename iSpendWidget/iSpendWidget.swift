@@ -61,6 +61,9 @@ struct iSpendWidgetEntryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                Text(entry.snapshot.accountName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
                 Spacer()
                 Text("iSpend")
                     .font(.caption.weight(.semibold))

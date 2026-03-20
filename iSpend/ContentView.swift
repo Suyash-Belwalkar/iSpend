@@ -33,6 +33,20 @@ struct ContentView: View {
         friendEntries.summary
     }
 
+    private func parentCategoryColor(for context: ExpenseParentContext) -> Color {
+        if let category = categories.first(where: { $0.isParentCategory && $0.normalizedName == context.normalizedName }) {
+            return Color(hex: category.colorHex)
+        }
+        switch context {
+        case .family:
+            return Color.red
+        case .friends:
+            return Color.purple
+        case .gym:
+            return Color.purple
+        }
+    }
+
     var body: some View {
         TabView {
             if let a = sorted[safe: 0] { accountTab(for: a) }
@@ -198,7 +212,7 @@ struct ContentView: View {
                                 onSelectExpense: { activeSheet = .editExpense($0) }
                             )
                         } label: {
-                            ParentContextExpenseCard(title: "Family", amount: familyTotal, tint: .teal)
+                            ParentContextExpenseCard(title: "Family", amount: familyTotal, tint: parentCategoryColor(for: .family))
                         }
                         .buttonStyle(.plain)
 
@@ -209,7 +223,7 @@ struct ContentView: View {
                                 onSelectExpense: { activeSheet = .editExpense($0) }
                             )
                         } label: {
-                            ParentContextExpenseCard(title: "Friends", amount: friendsTotal, tint: .yellow)
+                            ParentContextExpenseCard(title: "Friends", amount: friendsTotal, tint: parentCategoryColor(for: .friends))
                         }
                         .buttonStyle(.plain)
 

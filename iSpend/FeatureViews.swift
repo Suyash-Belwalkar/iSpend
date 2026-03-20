@@ -365,7 +365,7 @@ struct FriendsOverviewCard: View {
                             .overlay {
                                 Text(String(name.prefix(1)).uppercased())
                                     .font(.caption.bold())
-                                    .foregroundStyle(.black.opacity(0.8))
+                            .foregroundStyle(.black.opacity(0.8))
                             }
                             .frame(width: 34, height: 34)
                             .overlay(Circle().stroke(.black.opacity(0.08), lineWidth: 1))

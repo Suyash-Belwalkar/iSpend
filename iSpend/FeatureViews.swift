@@ -57,13 +57,19 @@ struct BankCardView: View {
     let expenses: [Expense]
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
+    struct WeightedCategoryColor {
+        let category: ExpenseCategory
+        let total: Double
+        let share: Double
+    }
+
     var balance: Double {
         expenses
             .filter { $0.account?.persistentModelID == account.persistentModelID }
             .netTotal
     }
 
-    var prominentCategories: [ExpenseCategory] {
+    var prominentCategoryColors: [WeightedCategoryColor] {
         let monthExpenses = expenses.filter {
             $0.account?.persistentModelID == account.persistentModelID &&
             Calendar.current.isDate($0.date, equalTo: .now, toGranularity: .month) &&
@@ -80,17 +86,39 @@ struct BankCardView: View {
             return (categoryName: entry.key, total: total)
         }
 
-        return ranked
+        let rankedCategories = ranked
             .sorted { lhs, rhs in lhs.total > rhs.total }
-            .prefix(3)
             .compactMap { item in
-                categories.first(where: { $0.normalizedName == item.categoryName.lowercased() })
+                categories.first(where: { $0.normalizedName == item.categoryName.lowercased() }).map {
+                    (category: $0, total: item.total)
+                }
             }
+
+        let grandTotal = rankedCategories.reduce(0) { $0 + $1.total }
+        guard grandTotal > 0 else { return [] }
+
+        return rankedCategories
+            .map { item in
+                WeightedCategoryColor(
+                    category: item.category,
+                    total: item.total,
+                    share: item.total / grandTotal
+                )
+            }
+            .filter { $0.share >= 0.10 }
+            .sorted { $0.total > $1.total }
+            .prefix(5)
+            .map { $0 }
     }
 
     var palette: [Color] {
-        let colors = prominentCategories.map { Color(hex: $0.colorHex) }
-        return colors.isEmpty ? [Color.blue, Color.cyan, Color.indigo] : colors
+        let colors = prominentCategoryColors.map { Color(hex: $0.category.colorHex) }
+        return colors.isEmpty ? [Color.blue, Color.cyan, Color.indigo, Color.teal, Color.mint] : colors
+    }
+
+    var meshShares: [Double] {
+        let shares = prominentCategoryColors.map(\.share)
+        return shares.isEmpty ? [1, 0.7, 0.5, 0.35, 0.25] : shares
     }
 
     var gradient: LinearGradient {
@@ -103,7 +131,8 @@ struct BankCardView: View {
                 .fill(.clear)
                 .overlay {
                     AnimatedMeshCardGradient(
-                        colors: palette
+                        colors: palette,
+                        shares: meshShares
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -140,7 +169,11 @@ struct BankCardView: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(prominentCategories.isEmpty ? "No spend data yet" : prominentCategories.map(\.name).joined(separator: " • "))
+                        Text(
+                            prominentCategoryColors.isEmpty
+                            ? "No spend data yet"
+                            : prominentCategoryColors.map(\.category.name).joined(separator: " • ")
+                        )
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.92))
                             .lineLimit(2)
@@ -221,43 +254,80 @@ struct AnimatedCardGradient: View {
 
 struct AnimatedMeshCardGradient: View {
     let colors: [Color]
+    let shares: [Double]
 
     @State private var isAnimating = false
 
     private var palette: [Color] {
-        let fallback = [Color.blue, Color.cyan, Color.indigo]
+        let fallback = [Color.blue, Color.cyan, Color.indigo, Color.teal, Color.mint]
         let resolved = colors.isEmpty ? fallback : colors
 
-        if resolved.count >= 3 {
-            return Array(resolved.prefix(3))
+        if resolved.count >= 5 {
+            return Array(resolved.prefix(5))
+        }
+
+        if resolved.count == 4 {
+            return [resolved[0], resolved[1], resolved[2], resolved[3], resolved[1].mix(with: resolved[2], amount: 0.35)]
+        }
+
+        if resolved.count == 3 {
+            return [resolved[0], resolved[1], resolved[2], resolved[0].mix(with: resolved[2], amount: 0.28), resolved[1].mix(with: resolved[2], amount: 0.32)]
         }
 
         if resolved.count == 2 {
-            return [resolved[0], resolved[1], resolved[0].mix(with: resolved[1], amount: 0.45)]
+            return [
+                resolved[0],
+                resolved[1],
+                resolved[0].mix(with: resolved[1], amount: 0.7),
+                resolved[0].mix(with: resolved[1], amount: 0.28),
+                resolved[0].mix(with: resolved[1], amount: 0.48)
+            ]
         }
 
-        return [resolved[0], resolved[0].opacity(0.92), resolved[0].opacity(0.8)]
+        return [
+            resolved[0],
+            resolved[0].opacity(0.94),
+            resolved[0].opacity(0.86),
+            resolved[0].opacity(0.78),
+            resolved[0].opacity(0.9)
+        ]
+    }
+
+    private var normalizedShares: [Double] {
+        let resolved = shares.isEmpty ? [1, 0.7, 0.5, 0.35, 0.25] : shares
+        let padded = resolved + Array(repeating: resolved.last ?? 0.2, count: max(0, 5 - resolved.count))
+        return Array(padded.prefix(5))
     }
 
     private var points: [SIMD2<Float>] {
-        [
+        let dominantInfluence = min(max(normalizedShares[0], 0.10), 0.65)
+        let centerX = Float(0.34 + dominantInfluence * 0.36)
+        let rightY = Float(isAnimating ? 0.54 : 0.82)
+
+        return [
             SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
-            SIMD2(0.0, 0.5), SIMD2(isAnimating ? 0.18 : 0.78, 0.5), SIMD2(1.0, isAnimating ? 0.5 : 1.0),
+            SIMD2(0.0, 0.5), SIMD2(isAnimating ? centerX - 0.08 : centerX + 0.08, 0.5), SIMD2(1.0, rightY),
             SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
         ]
     }
 
     private var meshColors: [Color] {
-        [
-            palette[0].opacity(0.96),
-            palette[0].mix(with: palette[1], amount: 0.24),
-            palette[1].opacity(0.9),
-            palette[0].mix(with: palette[2], amount: isAnimating ? 0.18 : 0.32),
-            palette[1].mix(with: palette[2], amount: 0.28),
-            palette[2].opacity(0.84),
-            palette[2].mix(with: palette[0], amount: 0.12),
-            palette[2].mix(with: palette[1], amount: isAnimating ? 0.22 : 0.12),
-            palette[2].opacity(0.98)
+        let center = palette[0]
+        let topLeft = palette[1]
+        let topRight = palette[2]
+        let bottomRight = palette[3]
+        let bottomLeft = palette[4]
+
+        return [
+            topLeft,
+            topLeft.mix(with: center, amount: 0.42),
+            topRight,
+            bottomLeft.mix(with: center, amount: 0.34),
+            center,
+            topRight.mix(with: center, amount: 0.34),
+            bottomLeft,
+            bottomLeft.mix(with: bottomRight, amount: 0.46),
+            bottomRight
         ]
     }
 

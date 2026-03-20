@@ -17,7 +17,8 @@ struct iSpendWidgetProvider: AppIntentTimelineProvider {
                 today: 430,
                 week: 1_280,
                 month: 4_620,
-                colors: [Color.orange, Color.pink, Color.indigo]
+                colors: [Color.orange, Color.pink, Color.indigo, Color.teal, Color.mint],
+                shares: [0.36, 0.24, 0.18, 0.12, 0.10]
             ),
             configuration: SelectAccountIntent()
         )
@@ -76,7 +77,7 @@ struct iSpendWidgetEntryView: View {
         .ignoresSafeArea()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .containerBackground(for: .widget) {
-            WidgetMeshGradientBackground(colors: entry.snapshot.colors)
+            WidgetMeshGradientBackground(colors: entry.snapshot.colors, shares: entry.snapshot.shares)
         }
     }
 }
@@ -104,7 +105,8 @@ struct iSpendWidget: Widget {
             today: 430,
             week: 1_280,
             month: 4_620,
-            colors: [Color.orange, Color.pink, Color.indigo]
+            colors: [Color.orange, Color.pink, Color.indigo, Color.teal, Color.mint],
+            shares: [0.36, 0.24, 0.18, 0.12, 0.10]
         ),
         configuration: SelectAccountIntent()
     )

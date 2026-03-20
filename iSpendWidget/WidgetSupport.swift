@@ -56,6 +56,7 @@ struct WidgetSnapshot {
     let week: Double
     let month: Double
     let colors: [Color]
+    let shares: [Double]
 }
 
 enum WidgetDataLoader {
@@ -75,7 +76,8 @@ enum WidgetDataLoader {
                 today: 0,
                 week: 0,
                 month: 0,
-                colors: [Color.blue, Color.cyan, Color.indigo]
+                colors: [Color.blue, Color.cyan, Color.indigo, Color.teal, Color.mint],
+                shares: [1, 0.7, 0.5, 0.35, 0.25]
             )
         }
 
@@ -106,20 +108,24 @@ enum WidgetDataLoader {
         let grouped = Dictionary(grouping: monthRows) { expense in
             expense.effectiveCategoryColorHex(from: allCategories) ?? ""
         }
-        let colors = grouped.compactMap { colorHex, expenses -> (String, Double)? in
+        let ranked = grouped.compactMap { colorHex, expenses -> (String, Double)? in
             guard !colorHex.isEmpty else { return nil }
             return (colorHex, expenses.reduce(0) { $0 + $1.amount })
         }
         .sorted { $0.1 > $1.1 }
-        .prefix(3)
-        .map { Color(hex: $0.0) }
+
+        let grandTotal = ranked.reduce(0) { $0 + $1.1 }
+        let qualifying = ranked.filter { grandTotal > 0 ? ($0.1 / grandTotal) >= 0.10 : false }
+        let colors = qualifying.prefix(5).map { Color(hex: $0.0) }
+        let shares = qualifying.prefix(5).map { grandTotal > 0 ? $0.1 / grandTotal : 0 }
 
         return WidgetSnapshot(
             accountName: selectedAccount.name,
             today: today,
             week: week,
             month: month,
-            colors: colors.isEmpty ? [Color.blue, Color.cyan, Color.indigo] : colors
+            colors: colors.isEmpty ? [Color.blue, Color.cyan, Color.indigo, Color.teal, Color.mint] : colors,
+            shares: shares.isEmpty ? [1, 0.7, 0.5, 0.35, 0.25] : shares
         )
     }
 }
@@ -147,42 +153,77 @@ extension Double {
 
 struct WidgetMeshGradientBackground: View {
     let colors: [Color]
+    let shares: [Double]
 
     private var palette: [Color] {
-        let fallback = [Color.blue, Color.cyan, Color.indigo]
+        let fallback = [Color.blue, Color.cyan, Color.indigo, Color.teal, Color.mint]
         let resolved = colors.isEmpty ? fallback : colors
 
-        if resolved.count >= 3 {
-            return Array(resolved.prefix(3))
+        if resolved.count >= 5 {
+            return Array(resolved.prefix(5))
+        }
+
+        if resolved.count == 4 {
+            return [resolved[0], resolved[1], resolved[2], resolved[3], resolved[1].mix(with: resolved[2], amount: 0.35)]
+        }
+
+        if resolved.count == 3 {
+            return [resolved[0], resolved[1], resolved[2], resolved[0].mix(with: resolved[2], amount: 0.28), resolved[1].mix(with: resolved[2], amount: 0.32)]
         }
 
         if resolved.count == 2 {
-            return [resolved[0], resolved[1], resolved[0].mix(with: resolved[1], amount: 0.45)]
+            return [
+                resolved[0],
+                resolved[1],
+                resolved[0].mix(with: resolved[1], amount: 0.7),
+                resolved[0].mix(with: resolved[1], amount: 0.28),
+                resolved[0].mix(with: resolved[1], amount: 0.48)
+            ]
         }
 
-        return [resolved[0], resolved[0].opacity(0.92), resolved[0].opacity(0.8)]
+        return [
+            resolved[0],
+            resolved[0].opacity(0.94),
+            resolved[0].opacity(0.86),
+            resolved[0].opacity(0.78),
+            resolved[0].opacity(0.9)
+        ]
+    }
+
+    private var normalizedShares: [Double] {
+        let resolved = shares.isEmpty ? [1, 0.7, 0.5, 0.35, 0.25] : shares
+        let padded = resolved + Array(repeating: resolved.last ?? 0.2, count: max(0, 5 - resolved.count))
+        return Array(padded.prefix(5))
     }
 
     var body: some View {
+        let center = palette[0]
+        let topLeft = palette[1]
+        let topRight = palette[2]
+        let bottomRight = palette[3]
+        let bottomLeft = palette[4]
+        let dominantInfluence = min(max(normalizedShares[0], 0.10), 0.65)
+        let centerX = Float(0.34 + dominantInfluence * 0.36)
+
         ZStack {
             MeshGradient(
                 width: 3,
                 height: 3,
                 points: [
                     SIMD2(0.0, 0.0), SIMD2(0.5, 0.0), SIMD2(1.0, 0.0),
-                    SIMD2(0.0, 0.5), SIMD2(0.56, 0.5), SIMD2(1.0, 0.62),
+                    SIMD2(0.0, 0.5), SIMD2(centerX, 0.5), SIMD2(1.0, 0.62),
                     SIMD2(0.0, 1.0), SIMD2(0.5, 1.0), SIMD2(1.0, 1.0),
                 ],
                 colors: [
-                    palette[0].opacity(0.96),
-                    palette[0].mix(with: palette[1], amount: 0.24),
-                    palette[1].opacity(0.9),
-                    palette[0].mix(with: palette[2], amount: 0.3),
-                    palette[1].mix(with: palette[2], amount: 0.28),
-                    palette[2].opacity(0.84),
-                    palette[2].mix(with: palette[0], amount: 0.12),
-                    palette[2].mix(with: palette[1], amount: 0.16),
-                    palette[2].opacity(0.98)
+                    topLeft,
+                    topLeft.mix(with: center, amount: 0.42),
+                    topRight,
+                    bottomLeft.mix(with: center, amount: 0.34),
+                    center,
+                    topRight.mix(with: center, amount: 0.34),
+                    bottomLeft,
+                    bottomLeft.mix(with: bottomRight, amount: 0.46),
+                    bottomRight
                 ]
             )
             .saturation(1.06)

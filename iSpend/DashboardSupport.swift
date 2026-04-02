@@ -42,7 +42,6 @@ enum HomeSheet: Identifiable {
     case editAccount(BankAccount)
     case addExpense
     case editExpense(Expense)
-    case addInvestment
     case addFriendEntry
     case editFriendEntry(FriendLedgerEntry)
     case addSubscription
@@ -61,8 +60,6 @@ enum HomeSheet: Identifiable {
             "add-expense"
         case let .editExpense(expense):
             "edit-\(expense.persistentModelID)"
-        case .addInvestment:
-            "add-investment"
         case .addFriendEntry:
             "add-friend-entry"
         case let .editFriendEntry(entry):

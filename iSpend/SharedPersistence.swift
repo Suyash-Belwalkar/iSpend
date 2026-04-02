@@ -32,21 +32,7 @@ enum SharedPersistence {
         do {
             return try ModelContainer(for: schema, configurations: [configuration])
         } catch {
-            resetSharedStore()
-            return try! ModelContainer(for: schema, configurations: [configuration])
-        }
-    }
-
-    private static func resetSharedStore() {
-        let fileManager = FileManager.default
-        let urls = [
-            sharedURL,
-            sharedURL.appendingPathExtension("shm"),
-            sharedURL.appendingPathExtension("wal"),
-        ]
-
-        for url in urls where fileManager.fileExists(atPath: url.path) {
-            try? fileManager.removeItem(at: url)
+            fatalError("Unable to create shared SwiftData container at \(sharedURL.path): \(error)")
         }
     }
 }

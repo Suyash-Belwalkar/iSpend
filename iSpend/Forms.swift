@@ -74,6 +74,7 @@ struct AddBankAccountSheet: View {
             )
             modelContext.insert(account)
         }
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
     }
@@ -81,8 +82,13 @@ struct AddBankAccountSheet: View {
     private func deleteAccount() {
         guard let account else { return }
         modelContext.delete(account)
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
+    }
+
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }
 
@@ -213,6 +219,7 @@ struct ExpenseFormSheet: View {
             modelContext.insert(newExpense)
         }
 
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
     }
@@ -220,8 +227,13 @@ struct ExpenseFormSheet: View {
     private func deleteExpense() {
         guard let expense else { return }
         modelContext.delete(expense)
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
+    }
+
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }
 
@@ -315,6 +327,7 @@ struct FriendEntrySheet: View {
             newEntry.isSettled = isSettled
             modelContext.insert(newEntry)
         }
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
     }
@@ -322,55 +335,13 @@ struct FriendEntrySheet: View {
     private func deleteEntry() {
         guard let entry else { return }
         modelContext.delete(entry)
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
     }
-}
 
-struct InvestmentSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-
-    @State private var title = ""
-    @State private var amount = 0.0
-    @State private var dueDay = 1
-    @State private var note = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Recurring Investment") {
-                    TextField("Title", text: $title)
-                    TextField("Amount", value: $amount, format: .number)
-                        .keyboardType(.decimalPad)
-                    Stepper("Due day: \(dueDay)", value: $dueDay, in: 1 ... 31)
-                    TextField("Note", text: $note)
-                }
-            }
-            .navigationTitle("Add Investment")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save", action: save)
-                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || amount <= 0)
-                }
-            }
-        }
-    }
-
-    private func save() {
-        modelContext.insert(
-            Investment(
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                amount: amount,
-                dueDay: dueDay,
-                note: note
-            )
-        )
-        WidgetReloader.reload()
-        dismiss()
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }
 
@@ -412,8 +383,13 @@ struct SubscriptionSheet: View {
             maxMembers: maxMembers
         )
         modelContext.insert(subscription)
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
+    }
+
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }
 
@@ -488,6 +464,7 @@ struct SubscriptionMemberSheet: View {
             )
             modelContext.insert(newMember)
         }
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
     }
@@ -495,8 +472,13 @@ struct SubscriptionMemberSheet: View {
     private func deleteMember() {
         guard let member else { return }
         modelContext.delete(member)
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
+    }
+
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }
 
@@ -553,7 +535,12 @@ struct CategorySheet: View {
                 )
             )
         }
+        persistChanges()
         WidgetReloader.reload()
         dismiss()
+    }
+
+    private func persistChanges() {
+        try? modelContext.save()
     }
 }

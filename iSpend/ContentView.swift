@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftData
 import SwiftUI
 
@@ -7,13 +8,14 @@ struct ContentView: View {
     @Query(sort: \BankAccount.sortOrder) private var accounts: [BankAccount]
     @Query(sort: \Expense.date, order: .reverse) private var expenses: [Expense]
     @Query(sort: \FriendLedgerEntry.date, order: .reverse) private var friendEntries: [FriendLedgerEntry]
-    @Query(sort: \Investment.title) private var investments: [Investment]
     @Query(sort: \FamilySubscription.title) private var subscriptions: [FamilySubscription]
     @Query(sort: \SubscriptionMember.memberName) private var subscriptionMembers: [SubscriptionMember]
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
     @State private var selectedAccountID: PersistentIdentifier?
     @State private var activeSheet: HomeSheet?
+    @State private var isBalanceVisible = false
+    @State private var balanceAuthError: String?
 
     init() {}
 
@@ -95,20 +97,33 @@ struct ContentView: View {
                     }
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            NavigationLink {
-                                SettingsView(
-                                    onAddAccount: { activeSheet = .addAccount },
-                                    onEditAccount: { activeSheet = .editAccount($0) },
-                                    onAddCategory: { activeSheet = .addCategory },
-                                    onEditCategory: { activeSheet = .editCategory($0) }
-                                )
-                            } label: {
-                                Image(systemName: "gearshape")
+                            HStack(spacing: 14) {
+                                Button {
+                                    toggleBalanceVisibility()
+                                } label: {
+                                    Image(systemName: isBalanceVisible ? "eye.slash" : "eye")
+                                }
+
+                                NavigationLink {
+                                    SettingsView(
+                                        onAddAccount: { activeSheet = .addAccount },
+                                        onEditAccount: { activeSheet = .editAccount($0) },
+                                        onAddCategory: { activeSheet = .addCategory },
+                                        onEditCategory: { activeSheet = .editCategory($0) }
+                                    )
+                                } label: {
+                                    Image(systemName: "gearshape")
+                                }
                             }
                         }
                     }
                     .sheet(item: $activeSheet) { sheet in
                         sheetContent(for: sheet)
+                    }
+                    .alert("Unable to Verify Identity", isPresented: balanceAuthAlertBinding) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(balanceAuthError ?? "Try again.")
                     }
             }
         }
@@ -143,6 +158,49 @@ struct ContentView: View {
         activeSheet = .addExpense
     }
 
+    private var balanceAuthAlertBinding: Binding<Bool> {
+        Binding(
+            get: { balanceAuthError != nil },
+            set: { newValue in
+                if !newValue {
+                    balanceAuthError = nil
+                }
+            }
+        )
+    }
+
+    private func toggleBalanceVisibility() {
+        if isBalanceVisible {
+            isBalanceVisible = false
+            return
+        }
+
+        Task {
+            await authenticateForBalance()
+        }
+    }
+
+    @MainActor
+    private func authenticateForBalance() async {
+        let context = LAContext()
+        var authError: NSError?
+        let reason = "Authenticate to view your account balance."
+
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &authError) else {
+            balanceAuthError = authError?.localizedDescription ?? "Biometric or device authentication is not available."
+            return
+        }
+
+        do {
+            let success = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            if success {
+                isBalanceVisible = true
+            }
+        } catch {
+            balanceAuthError = error.localizedDescription
+        }
+    }
+
     // MARK: - Sheet Content
 
     @ViewBuilder
@@ -156,8 +214,6 @@ struct ContentView: View {
             ExpenseFormSheet(account: selectedAccount)
         case let .editExpense(expense):
             ExpenseFormSheet(expense: expense, account: expense.account ?? selectedAccount)
-        case .addInvestment:
-            InvestmentSheet()
         case .addFriendEntry:
             FriendEntrySheet()
         case let .editFriendEntry(entry):
@@ -182,7 +238,6 @@ struct ContentView: View {
         let scopedExpenses = expenses.filter { $0.account?.persistentModelID == account.persistentModelID }
         let todayRows = scopedExpenses.filter { Calendar.current.isDateInToday($0.date) }
         let totals = expenses.totals(for: account)
-        let yearlyTotals = expenses.yearlyTotals(for: account)
         let familyTotal = parentContextMonthTotal(.family, account: account)
         let friendsTotal = parentContextMonthTotal(.friends, account: account)
 
@@ -195,23 +250,34 @@ struct ContentView: View {
                         onSelectExpense: { activeSheet = .editExpense($0) }
                     )
                 } label: {
-                    BankCardView(account: account, expenses: expenses)
+                    BankCardView(
+                        account: account,
+                        expenses: expenses,
+                        isBalanceVisible: isBalanceVisible,
+                        onBalanceTap: { toggleBalanceVisibility() }
+                    )
                 }
                 .buttonStyle(.plain)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         NavigationLink {
-                            DailyBreakdownView(totals: yearlyTotals)
+                            DailyBreakdownView(
+                                account: account,
+                                expenses: expenses,
+                                onSelectExpense: { activeSheet = .editExpense($0) }
+                            )
                         } label: {
                             ExpenseSummaryCard(totals: totals)
                         }
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            ExpensesByDateView(
+                            PeriodInsightView(
                                 title: "Family",
+                                headerTitle: "Months",
                                 expenses: filteredExpenses(for: .family, account: account),
+                                sections: monthSections(for: filteredExpenses(for: .family, account: account)),
                                 onSelectExpense: { activeSheet = .editExpense($0) }
                             )
                         } label: {
@@ -220,9 +286,11 @@ struct ContentView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            ExpensesByDateView(
+                            PeriodInsightView(
                                 title: "Friends",
+                                headerTitle: "Months",
                                 expenses: filteredExpenses(for: .friends, account: account),
+                                sections: monthSections(for: filteredExpenses(for: .friends, account: account)),
                                 onSelectExpense: { activeSheet = .editExpense($0) }
                             )
                         } label: {
@@ -248,16 +316,6 @@ struct ContentView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            InvestmentsView { activeSheet = .addInvestment }
-                        } label: {
-                            InvestmentsCard(
-                                count: investments.count,
-                                total: investments.reduce(0) { $0 + $1.amount }
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        NavigationLink {
                             FriendsView(
                                 onAdd: { activeSheet = .addFriendEntry },
                                 onEditEntry: { activeSheet = .editFriendEntry($0) }
@@ -277,9 +335,11 @@ struct ContentView: View {
                             .font(.title3.bold())
                         Spacer()
                         NavigationLink {
-                            ExpensesByDateView(
+                            PeriodInsightView(
                                 title: "All Expenses",
+                                headerTitle: "Months",
                                 expenses: scopedExpenses,
+                                sections: monthSections(for: scopedExpenses),
                                 onSelectExpense: { activeSheet = .editExpense($0) }
                             )
                         } label: {
@@ -410,6 +470,7 @@ struct ContentView: View {
         }
 
         if didMutateSharedData {
+            try? modelContext.save()
             WidgetReloader.reload()
         }
     }

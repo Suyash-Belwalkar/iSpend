@@ -46,6 +46,77 @@ final class ExpenseCategory {
 }
 
 @Model
+final class Investment {
+    var title: String
+    var amount: Double
+    var dueDay: Int
+    var note: String
+
+    init(title: String, amount: Double, dueDay: Int, note: String = "") {
+        self.title = title
+        self.amount = amount
+        self.dueDay = dueDay
+        self.note = note
+    }
+}
+
+@Model
+final class FriendLedgerEntry {
+    var friendName: String
+    var amount: Double
+    var date: Date
+    var directionRawValue: String
+    var note: String
+
+    init(
+        friendName: String,
+        amount: Double,
+        date: Date = .now,
+        directionRawValue: String,
+        note: String = ""
+    ) {
+        self.friendName = friendName
+        self.amount = amount
+        self.date = date
+        self.directionRawValue = directionRawValue
+        self.note = note
+    }
+}
+
+@Model
+final class FamilySubscription {
+    var title: String
+    var amount: Double
+    var maxMembers: Int
+
+    init(title: String, amount: Double, maxMembers: Int = 6) {
+        self.title = title
+        self.amount = amount
+        self.maxMembers = maxMembers
+    }
+}
+
+@Model
+final class SubscriptionMember {
+    var memberName: String
+    var amount: Double
+    var paidThroughMonth: Date?
+    var subscription: FamilySubscription?
+
+    init(
+        memberName: String,
+        amount: Double,
+        paidThroughMonth: Date? = nil,
+        subscription: FamilySubscription? = nil
+    ) {
+        self.memberName = memberName
+        self.amount = amount
+        self.paidThroughMonth = paidThroughMonth
+        self.subscription = subscription
+    }
+}
+
+@Model
 final class Expense {
     var title: String
     var amount: Double
@@ -105,6 +176,10 @@ enum WidgetSharedPersistence {
         Schema([
             BankAccount.self,
             Expense.self,
+            Investment.self,
+            FriendLedgerEntry.self,
+            FamilySubscription.self,
+            SubscriptionMember.self,
             ExpenseCategory.self,
         ])
     }
@@ -124,21 +199,7 @@ enum WidgetSharedPersistence {
         do {
             return try ModelContainer(for: schema, configurations: [configuration])
         } catch {
-            resetSharedStore()
-            return try! ModelContainer(for: schema, configurations: [configuration])
-        }
-    }
-
-    private static func resetSharedStore() {
-        let fileManager = FileManager.default
-        let urls = [
-            sharedURL,
-            sharedURL.appendingPathExtension("shm"),
-            sharedURL.appendingPathExtension("wal"),
-        ]
-
-        for url in urls where fileManager.fileExists(atPath: url.path) {
-            try? fileManager.removeItem(at: url)
+            fatalError("Unable to create widget SwiftData container at \(sharedURL.path): \(error)")
         }
     }
 }

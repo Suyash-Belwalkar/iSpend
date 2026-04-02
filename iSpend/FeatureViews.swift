@@ -37,15 +37,72 @@ struct ExpenseRowView: View {
 }
 
 struct DailyBreakdownView: View {
-    let totals: YearlyExpenseTotals
+    let account: BankAccount
+    let expenses: [Expense]
+    let onSelectExpense: (Expense) -> Void
+
+    private var scopedExpenses: [Expense] {
+        expenses
+            .filter {
+                $0.account?.persistentModelID == account.persistentModelID &&
+                $0.direction == .spent
+            }
+            .sorted { $0.date > $1.date }
+    }
+
+    private var totals: YearlyExpenseTotals {
+        expenses.yearlyTotals(for: account)
+    }
 
     var body: some View {
         List {
             Section("Current Period") {
-                LabeledContent("Today") { CurrencyText(amount: totals.today) }
-                LabeledContent("This Week") { CurrencyText(amount: totals.week) }
-                LabeledContent("This Month") { CurrencyText(amount: totals.month) }
-                LabeledContent("This Year") { CurrencyText(amount: totals.year) }
+                NavigationLink {
+                    PeriodExpenseListView(
+                        title: "Today",
+                        subtitle: "Today's Expenses",
+                        expenses: scopedExpenses.filter { Calendar.current.isDateInToday($0.date) },
+                        onSelectExpense: onSelectExpense
+                    )
+                } label: {
+                    LabeledContent("Today") { CurrencyText(amount: totals.today) }
+                }
+
+                NavigationLink {
+                    PeriodInsightView(
+                        title: "This Week",
+                        headerTitle: "Days",
+                        expenses: scopedExpenses.inCurrentWeek(),
+                        sections: daySections(for: scopedExpenses.inCurrentWeek()),
+                        onSelectExpense: onSelectExpense
+                    )
+                } label: {
+                    LabeledContent("This Week") { CurrencyText(amount: totals.week) }
+                }
+
+                NavigationLink {
+                    PeriodInsightView(
+                        title: "This Month",
+                        headerTitle: "Weeks",
+                        expenses: scopedExpenses.inCurrentMonth(),
+                        sections: weekSections(for: scopedExpenses.inCurrentMonth()),
+                        onSelectExpense: onSelectExpense
+                    )
+                } label: {
+                    LabeledContent("This Month") { CurrencyText(amount: totals.month) }
+                }
+
+                NavigationLink {
+                    PeriodInsightView(
+                        title: "This Year",
+                        headerTitle: "Months",
+                        expenses: scopedExpenses.inCurrentYear(),
+                        sections: monthSections(for: scopedExpenses.inCurrentYear()),
+                        onSelectExpense: onSelectExpense
+                    )
+                } label: {
+                    LabeledContent("This Year") { CurrencyText(amount: totals.year) }
+                }
             }
         }
         .navigationTitle("Expense Summary")
@@ -55,6 +112,8 @@ struct DailyBreakdownView: View {
 struct BankCardView: View {
     let account: BankAccount
     let expenses: [Expense]
+    let isBalanceVisible: Bool
+    let onBalanceTap: () -> Void
     @Query(sort: \ExpenseCategory.name) private var categories: [ExpenseCategory]
 
     struct WeightedCategoryColor {
@@ -160,9 +219,16 @@ struct BankCardView: View {
                     Text("Current Balance")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.8))
-                    CurrencyText(amount: balance)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+
+                    Button(action: onBalanceTap) {
+                        HStack(spacing: 10) {
+                            CurrencyText(amount: balance)
+                                .font(.system(size: 34, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                                .blur(radius: isBalanceVisible ? 0 : 10)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 Spacer()
@@ -501,74 +567,51 @@ struct FriendsOverviewCard: View {
     }
 }
 
-struct ExpensesByDateView: View {
+struct PeriodExpenseListView: View {
     let title: String
+    let subtitle: String
     let expenses: [Expense]
     let onSelectExpense: (Expense) -> Void
 
-    private var groupedExpenses: [(String, [Expense])] {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-
-        let grouped = Dictionary(grouping: expenses) { expense in
-            formatter.string(from: expense.date)
-        }
-
-        let sortedKeys = grouped.keys.sorted { lhs, rhs in
-            guard
-                let leftDate = formatter.date(from: lhs),
-                let rightDate = formatter.date(from: rhs)
-            else {
-                return lhs > rhs
-            }
-            return leftDate > rightDate
-        }
-
-        return sortedKeys.map { key in
-            let values = (grouped[key] ?? []).sorted { $0.date > $1.date }
-            return (key, values)
-        }
-    }
-
     var body: some View {
         List {
-            ForEach(groupedExpenses, id: \.0) { sectionTitle, rows in
-                Section(sectionTitle) {
-                    ForEach(rows) { expense in
-                        Button {
-                            onSelectExpense(expense)
-                        } label: {
-                            ExpenseRowView(expense: expense)
+            Section {
+                Text(subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+
+                CurrencyText(amount: expenses.reduce(0) { $0 + $1.amount })
+                    .font(.title2.bold())
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
+                    .listRowBackground(Color.clear)
+            }
+
+            if expenses.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No Expenses",
+                        systemImage: "list.bullet.rectangle",
+                        description: Text("Transactions for this period will appear here.")
+                    )
+                }
+            } else {
+                ForEach(groupExpensesByDay(expenses), id: \.title) { group in
+                    Section(group.title) {
+                        ForEach(group.expenses) { expense in
+                            Button {
+                                onSelectExpense(expense)
+                            } label: {
+                                ExpenseRowView(expense: expense)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .navigationTitle(title)
-    }
-}
-
-struct InvestmentsCard: View {
-    let count: Int
-    let total: Double
-
-    var body: some View {
-        DashboardCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Investments")
-                        .font(.title3.bold())
-                    Spacer()
-                }
-                Spacer()
-                CurrencyText(amount: total)
-                    .font(.title2.bold())
-                Text("\(count) monthly recurring payments")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 }
 
@@ -611,52 +654,326 @@ struct DashboardCard<Content: View>: View {
     }
 }
 
-struct InvestmentsView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Investment.title) private var investments: [Investment]
+struct PeriodInsightView: View {
+    let title: String
+    let headerTitle: String
+    let expenses: [Expense]
+    let sections: [PeriodInsightSection]
+    let onSelectExpense: (Expense) -> Void
 
-    let onAdd: () -> Void
+    @State private var selectedSectionID: String?
+
+    private var selectedSection: PeriodInsightSection? {
+        guard let selectedSectionID else { return nil }
+        return sections.first(where: { $0.id == selectedSectionID })
+    }
+
+    private var visibleExpenses: [Expense] {
+        selectedSection?.expenses ?? expenses.sorted { $0.date > $1.date }
+    }
+
+    private var totalAmount: Double {
+        visibleExpenses.reduce(0) { $0 + $1.amount }
+    }
 
     var body: some View {
-        List {
-            if investments.isEmpty {
-                ContentUnavailableView("No Investments", systemImage: "chart.line.uptrend.xyaxis", description: Text("Add monthly recurring investments to track them here."))
-            } else {
-                ForEach(investments) { investment in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(investment.title)
-                            Spacer()
-                            CurrencyText(amount: investment.amount)
-                                .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(headerTitle)
+                    .font(.largeTitle.bold())
+                    .padding(.leading, 16)
+
+                ZStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(sections) { section in
+                                let isDimmed = selectedSectionID != nil
+
+                                Button {
+                                    withAnimation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22)) {
+                                        selectedSectionID = section.id
+                                    }
+                                } label: {
+                                    PeriodInsightCard(
+                                        section: section,
+                                        isSelected: false
+                                    )
+                                    .frame(width: 130, height: 270)
+                                    .opacity(isDimmed ? 0 : 1)
+                                    .scaleEffect(isDimmed ? 0.995 : 1)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(selectedSectionID != nil)
+                            }
                         }
-                        Text("Due every month on day \(investment.dueDay)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        if !investment.note.isEmpty {
-                            Text(investment.note)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
+                        .padding(.leading, 16)
+                        .padding(.trailing, 20)
+                        .scrollClipDisabled()
+                    }
+                    .scrollDisabled(selectedSectionID != nil)
+
+                    if let selectedSection {
+                        Button {
+                            withAnimation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22)) {
+                                selectedSectionID = nil
+                            }
+                        } label: {
+                            PeriodInsightCard(
+                                section: selectedSection,
+                                isSelected: true
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 270, maxHeight: 270)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.985, anchor: .center)),
+                                removal: .opacity
+                            ))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .zIndex(1)
+                    }
+                }
+                .frame(height: 270)
+            }
+            .animation(.spring(response: 0.62, dampingFraction: 0.92, blendDuration: 0.22), value: selectedSectionID)
+
+            List {
+                Section {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Transactions")
+                            .font(.title.bold())
+                        Spacer()
+                        CurrencyText(amount: totalAmount)
+                            .font(.title2.bold())
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowBackground(Color.clear)
+
+                    Text(selectedSection?.title ?? "All \(headerTitle)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 8, trailing: 0))
+                        .listRowBackground(Color.clear)
+                }
+
+                if visibleExpenses.isEmpty {
+                    Section {
+                        ContentUnavailableView(
+                            "No Expenses",
+                            systemImage: "list.bullet.rectangle",
+                            description: Text("Transactions for this period will appear here.")
+                        )
+                    }
+                } else {
+                    ForEach(groupExpensesByDay(visibleExpenses), id: \.title) { group in
+                        Section(group.title) {
+                            ForEach(group.expenses) { expense in
+                                Button {
+                                    onSelectExpense(expense)
+                                } label: {
+                                    ExpenseRowView(expense: expense)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
-                .onDelete(perform: delete)
             }
+            .listStyle(.insetGrouped)
+            .scrollIndicators(.hidden)
+            .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Investments")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onAdd) {
-                    Image(systemName: "plus")
+        .background(Color(.systemBackground))
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct PeriodInsightSection: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let tint: Color
+    let total: Double
+    let expenses: [Expense]
+}
+
+private struct ExpenseDayGroup {
+    let title: String
+    let expenses: [Expense]
+}
+
+private struct PeriodInsightCard: View {
+    let section: PeriodInsightSection
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            section.tint.opacity(0.95),
+                            section.tint.opacity(0.72)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(.white.opacity(0.14), lineWidth: 1)
+                }
+                .shadow(color: section.tint.opacity(0.26), radius: isSelected ? 26 : 16, y: 14)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(section.title)
+                    .font(isSelected ? .system(size: 28, weight: .bold, design: .rounded) : .title2.bold())
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+
+                Text(section.subtitle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.82))
+
+                if isSelected {
+                    CurrencyText(amount: section.total)
+                        .font(.title.bold())
+                        .foregroundStyle(.white)
+                } else {
+                    Spacer(minLength: 0)
+                    CurrencyText(amount: section.total)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
                 }
             }
+            .padding(22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
     }
+}
 
-    private func delete(at offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(investments[index])
+private func groupExpensesByDay(_ expenses: [Expense]) -> [ExpenseDayGroup] {
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+
+    let grouped = Dictionary(grouping: expenses.sorted { $0.date > $1.date }) { expense in
+        formatter.string(from: expense.date)
+    }
+
+    let sortedKeys = grouped.keys.sorted { lhs, rhs in
+        guard
+            let leftDate = formatter.date(from: lhs),
+            let rightDate = formatter.date(from: rhs)
+        else {
+            return lhs > rhs
         }
+        return leftDate > rightDate
+    }
+
+    return sortedKeys.map { key in
+        ExpenseDayGroup(title: key, expenses: grouped[key] ?? [])
+    }
+}
+
+func daySections(for expenses: [Expense]) -> [PeriodInsightSection] {
+    let grouped = Dictionary(grouping: expenses.sorted { $0.date > $1.date }) { expense in
+        Calendar.current.startOfDay(for: expense.date)
+    }
+
+    return grouped.keys.sorted(by: >).map { day in
+        let rows = grouped[day] ?? []
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        let shortTitle = formatter.string(from: day)
+        formatter.dateFormat = "d MMM"
+        let subtitle = formatter.string(from: day)
+        return PeriodInsightSection(
+            id: "day-\(day.timeIntervalSince1970)",
+            title: shortTitle,
+            subtitle: subtitle,
+            tint: color(for: rows, fallback: .blue),
+            total: rows.reduce(0) { $0 + $1.amount },
+            expenses: rows.sorted { $0.date > $1.date }
+        )
+    }
+}
+
+func weekSections(for expenses: [Expense]) -> [PeriodInsightSection] {
+    let grouped = Dictionary(grouping: expenses.sorted { $0.date > $1.date }) { expense in
+        Calendar.current.component(.weekOfMonth, from: expense.date)
+    }
+
+    return grouped.keys.sorted().map { week in
+        let rows = grouped[week] ?? []
+        return PeriodInsightSection(
+            id: "week-\(week)",
+            title: "Week \(week)",
+            subtitle: "\(rows.count) transaction\(rows.count == 1 ? "" : "s")",
+            tint: color(for: rows, fallback: .orange),
+            total: rows.reduce(0) { $0 + $1.amount },
+            expenses: rows.sorted { $0.date > $1.date }
+        )
+    }
+}
+
+func monthSections(for expenses: [Expense]) -> [PeriodInsightSection] {
+    let grouped = Dictionary(grouping: expenses.sorted { $0.date > $1.date }) { expense in
+        let components = Calendar.current.dateComponents([.year, .month], from: expense.date)
+        return Calendar.current.date(from: components) ?? expense.date
+    }
+
+    return grouped.keys.sorted(by: >).map { month in
+        let rows = grouped[month] ?? []
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM"
+        let shortTitle = formatter.string(from: month)
+        formatter.dateFormat = "MMMM yyyy"
+        let subtitle = formatter.string(from: month)
+        return PeriodInsightSection(
+            id: "month-\(month.timeIntervalSince1970)",
+            title: shortTitle,
+            subtitle: subtitle,
+            tint: color(for: rows, fallback: .indigo),
+            total: rows.reduce(0) { $0 + $1.amount },
+            expenses: rows.sorted { $0.date > $1.date }
+        )
+    }
+}
+
+private func color(for expenses: [Expense], fallback: Color) -> Color {
+    guard let latestExpense = expenses.max(by: { $0.date < $1.date }) else {
+        return fallback
+    }
+
+    if let hex = latestExpense.category?.colorHex {
+        return Color(hex: hex)
+    }
+
+    switch latestExpense.parentContextRawValue?.lowercased() {
+    case "family":
+        return Color(hex: "#FF3B30")
+    case "friends", "gym":
+        return Color(hex: "#AF52DE")
+    default:
+        return fallback
+    }
+}
+
+private extension Array where Element == Expense {
+    func inCurrentWeek(calendar: Calendar = .current) -> [Expense] {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: .now) else { return [] }
+        return filter { interval.contains($0.date) }.sorted { $0.date > $1.date }
+    }
+
+    func inCurrentMonth(calendar: Calendar = .current) -> [Expense] {
+        guard let interval = calendar.dateInterval(of: .month, for: .now) else { return [] }
+        return filter { interval.contains($0.date) }.sorted { $0.date > $1.date }
+    }
+
+    func inCurrentYear(calendar: Calendar = .current) -> [Expense] {
+        guard let interval = calendar.dateInterval(of: .year, for: .now) else { return [] }
+        return filter { interval.contains($0.date) }.sorted { $0.date > $1.date }
     }
 }
 
@@ -727,6 +1044,7 @@ struct FriendsView: View {
         for index in offsets {
             modelContext.delete(ledger[index])
         }
+        try? modelContext.save()
     }
 }
 
@@ -833,6 +1151,7 @@ struct FamilySubscriptionsView: View {
         for index in offsets {
             modelContext.delete(rows[index])
         }
+        try? modelContext.save()
     }
 }
 
@@ -905,6 +1224,7 @@ struct SettingsView: View {
                     for index in offsets {
                         modelContext.delete(parentCategories[index])
                     }
+                    try? modelContext.save()
                 }
 
                 Button("Add Parent Category", action: onAddCategory)
@@ -932,6 +1252,7 @@ struct SettingsView: View {
                     for index in offsets {
                         modelContext.delete(subcategories[index])
                     }
+                    try? modelContext.save()
                 }
 
                 Button("Add Category", action: onAddCategory)
